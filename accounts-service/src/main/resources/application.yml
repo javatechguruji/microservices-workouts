@@ -1,0 +1,41 @@
+spring:
+  application:
+    name: springboot-data-workouts
+
+  datasource:
+    url: jdbc:h2:file:./data/testdb;AUTO_SERVER=TRUE;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+      settings:
+        web-allow-others: false
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    show-sql: false   # keep false; use logging instead (cleaner)
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.H2Dialect
+
+server:
+  port: 8080
+
+logging:
+  level:
+    org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE
+    org.springframework.jdbc.datasource: INFO
+
+# Optional: if you want schema/data initialization scripts later
+# spring:
+#   sql:
+#     init:
+#       mode: never
