@@ -1,0 +1,12 @@
+# Active inside the cluster via SPRING_PROFILES_ACTIVE=k8s (see
+# k8s/payment-service.yaml). Postgres runs on the host machine's Docker, NOT
+# inside minikube — pods reach the host through minikube's built-in DNS
+# alias, not "localhost" (that would resolve to the Pod itself).
+spring:
+  datasource:
+    url: jdbc:postgresql://host.minikube.internal:5432/payment-srv-db
+    username: postgres
+    password: postgres
+
+services:
+  order-service-url: http://order-service:9091

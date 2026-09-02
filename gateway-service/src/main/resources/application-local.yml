@@ -1,0 +1,5 @@
+# Active when running directly on the Mac (IntelliJ, mvn spring-boot:run).
+# order-service is reached on the port it binds to on localhost.
+services:
+  order:
+    url: http://localhost:9091

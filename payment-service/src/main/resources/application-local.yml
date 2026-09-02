@@ -1,0 +1,11 @@
+# Active when running directly on the Mac (IntelliJ, mvn spring-boot:run).
+# Postgres reached via docker-compose's port mapping on localhost — run
+# `docker compose up -d` from the repo root first.
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/payment-srv-db
+    username: postgres
+    password: postgres
+
+services:
+  order-service-url: http://localhost:9091

@@ -1,0 +1,6 @@
+# Active inside the cluster via SPRING_PROFILES_ACTIVE=k8s (see
+# k8s/gateway-service.yaml). order-service is reached through its stable
+# ClusterIP Service DNS name instead of localhost.
+services:
+  order:
+    url: http://order-service:9091

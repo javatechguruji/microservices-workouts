@@ -1,0 +1,31 @@
+spring:
+  application:
+    name: payment-service
+  profiles:
+    # Overridden by SPRING_PROFILES_ACTIVE=k8s in the Kubernetes Deployment.
+    active: local
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+server:
+  port: 8083
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE
+    org.springframework.jdbc.datasource: INFO

@@ -1,0 +1,18 @@
+#Build the Image
+minikube image build -t order-service:stage3 ./order-service
+
+#Deploy the image, before that you need to update order-service.yaml with latest build number
+kubectl apply -f k8s/order-service.yaml
+
+#verify deployment
+kubectl get deployment order-service -n ecommerce
+
+#Verify Pods
+kubectl get pods -n ecommerce -l app=order-service -o wide
+
+#Verify Logs in pod
+kubectl logs -n ecommerce deployment/order-service --tail=50
+
+#Expose Gateway - get a reachable URL and smoke-test it:
+minikube service gateway-service -n ecommerce --url
+

@@ -1,6 +1,10 @@
-.target/
+target/
 
 .idea/
+
+data/
+*.mv.db
+*.trace.db
 
 # Compiled class file
 *.class

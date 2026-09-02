@@ -1,0 +1,15 @@
+# Active when running directly on the Mac (IntelliJ, mvn spring-boot:run).
+# Postgres reached via docker-compose's port mapping on localhost — run
+# `docker compose up -d` from the repo root first.
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/order-srv-db
+    username: postgres
+    password: postgres
+
+# order-service calls product-service and inventory-service directly by
+# hostname:port here; in Kubernetes these become the Service DNS names
+# instead of hardcoded localhost URLs (see application-k8s.yml).
+services:
+  product-service-url: http://localhost:8081
+  inventory-service-url: http://localhost:8082
