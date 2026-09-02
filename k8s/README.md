@@ -10,9 +10,20 @@ Kubernetes manifests for the e-commerce system, one file per service:
 - `configmap.yaml` / `secret.yaml` — externalized config, replacing Spring Cloud Config Server (not written yet)
 
 No Eureka/service-registry manifest needed — services address each other by
-Kubernetes Service DNS name (e.g. `http://order-service:9091`) instead of
+Kubernetes Service DNS name (e.g. `http://order-service:9101`) instead of
 registering with a discovery server. See `../INTERVIEW_TOPICS.md` for the
 full topic checklist this maps to.
+
+## Port sequence
+
+All microservice ports follow one `91xx` block: `9100` gateway, `9101`
+order, `9102` payment, `9103` notification, `9104` product, `9105`
+inventory — one number to remember instead of six unrelated ones.
+
+Two numbers in that neighborhood are deliberately skipped: `9090`
+(Prometheus's real default port — not added to this repo yet, but likely
+to be) and `9092`/`9094` (Kafka's actual ports, see below — not a
+coincidence, chosen to leave room around them).
 
 ## Postgres and Kafka live outside the cluster, on purpose
 

@@ -18,7 +18,7 @@ spec:
           image: order-service:stage6
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 9091
+            - containerPort: 9101
           env:
             - name: POD_IP
               valueFrom:
@@ -29,13 +29,13 @@ spec:
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
-              port: 9091
+              port: 9101
             initialDelaySeconds: 10
             periodSeconds: 5
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
-              port: 9091
+              port: 9101
             initialDelaySeconds: 20
             periodSeconds: 10
 ---
@@ -50,5 +50,5 @@ spec:
     app: order-service
   ports:
     - name: http
-      port: 9091
-      targetPort: 9091
+      port: 9101
+      targetPort: 9101

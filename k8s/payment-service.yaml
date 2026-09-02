@@ -18,20 +18,20 @@ spec:
           image: payment-service:stage1
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8083
+            - containerPort: 9102
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: k8s
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
-              port: 8083
+              port: 9102
             initialDelaySeconds: 10
             periodSeconds: 5
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
-              port: 8083
+              port: 9102
             initialDelaySeconds: 20
             periodSeconds: 10
 ---
@@ -46,5 +46,5 @@ spec:
     app: payment-service
   ports:
     - name: http
-      port: 8083
-      targetPort: 8083
+      port: 9102
+      targetPort: 9102

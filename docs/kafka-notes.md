@@ -3,68 +3,11 @@
 Scenario: Client -> API Gateway -> Payment Service (producer) -> Kafka -> Order Service / Notification Service (consumers)
 
 A client can't pay before an order exists — payment is always *for* an
-order. So the scenario above is really the second half of a two-step flow;
-see [0. Full Flow](#0-full-flow--order-service--payment-service--kafka)
-below for the REST step that has to happen first, wired to the actual code
-in this repo.
-
----
-
-## 0. Full Flow — order-service → payment-service → Kafka
-
-Fully wired end-to-end — no manual stand-in endpoints needed anymore.
-
-```
-Client                order-service          payment-service           Kafka                 order-service        notification-service
-  |                        |                        |                     |                        |                        |
-  |--POST /api/orders----->|                        |                     |                        |                        |
-  |                        |--save Order(PENDING)-->|                     |                        |                        |
-  |<--201 {id, PENDING}----|                        |                     |                        |                        |
-  |                        |                        |                     |                        |                        |
-  |--POST /payments {orderId, amount}-------------->|                     |                        |                        |
-  |                        |<--GET /api/orders/{id}-|                     |                        |                        |
-  |                        |--200 order exists----->|                     |                        |                        |
-  |                        |                        |--save Payment------>|                        |                        |
-  |<--201 {id, SUCCESS}----|                        |--publish "payment-completed"------------------>|                        |
-  |                        |                        |                     |--consume (order-group)->|                        |
-  |                        |                        |                     |          Order -> CONFIRMED                      |
-  |                        |                        |                     |--consume (notification-group)------------------->|
-  |                        |                        |                     |                    logs the notification
-```
-
-**Step 1 — create the order (plain REST, no Kafka):**
-```bash
-curl -X POST http://localhost:9091/api/orders \
-  -H "Content-Type: application/json" \
-  -d '{"customerId":"CUST-1","amount":250.00}'
-# -> {"id":1,"customerId":"CUST-1","amount":250.00,"status":"PENDING","createdAt":"..."}
-```
-`OrderController` (`order-service`) → `OrderService.createOrder()` → `Order` saved to `order-srv-db` (Postgres) with status `PENDING`.
-
-**Step 2 — pay for that order (REST, enforces the "order must exist first" rule):**
-```bash
-curl -X POST http://localhost:8083/payments \
-  -H "Content-Type: application/json" \
-  -d '{"orderId":1,"amount":250.00}'
-# -> {"id":1,"orderId":1,"amount":250.00,"status":"SUCCESS","createdAt":"..."}
-```
-`PaymentController` → `PaymentServiceImpl.processPayment()` first calls `OrderServiceClient.getOrder(orderId)`, a real synchronous HTTP call to `order-service`'s `GET /api/orders/{id}`. If the order doesn't exist, `order-service` returns 404 and `payment-service` rejects the payment with 404 too — try `{"orderId":999999,...}` and see for yourself. Only if the order is confirmed to exist does it save a `Payment` row to `payment-srv-db`.
-
-**Step 3 — the publish.** After the save, `PaymentServiceImpl` publishes a `PaymentCompletedEvent(orderId, paymentId, status)` to topic `payment-completed`, keyed by `orderId` (`KafkaTemplate<String, PaymentCompletedEvent>`, `JsonSerializer`, `acks=all` + `enable.idempotence=true` — see §P3/P4 above). This is a **direct publish inside the same method**, not the transactional outbox pattern from §P2 — a crash between the DB save and the Kafka send can still drop the event. That's a known, accepted gap for this exercise; the outbox pattern is the real fix if this were production.
-
-**Step 4 — two independent consumers, both listening on `payment-completed`:**
-- `order-service` — `PaymentCompletedListener` (`groupId: order-group`) calls `OrderService.updateStatus(id, status)`, moving the order from `PENDING` to `CONFIRMED` (or `FAILED`). No dedup-by-message-id table: `updateStatus()` is naturally idempotent, so a redelivered message after a crash-before-ack is a harmless no-op — see §C1's "make the duplicate harmless, not impossible" in practice.
-- `notification-service` — `PaymentCompletedListener` (`groupId: notification-group`) calls `NotificationService.send(...)`, which just logs. No dedup here either — this service still has no DB on purpose, and a duplicate log line has no real consequence.
-
-Both use manual offset commit (`ack-mode: manual`, `Acknowledgment.acknowledge()` only after the DB update / send succeeds — see the worked example above) and `ErrorHandlingDeserializer` wrapping `JsonDeserializer`, so a malformed message logs and gets skipped by the container's default retry/skip behavior instead of crashing the listener thread (a lighter-weight stand-in for the full DLQ setup in §C2, which isn't wired here).
-
-**The cross-service JSON gotcha:** each service keeps its own local copy of `PaymentCompletedEvent` (different package per service — deliberate, no shared event-schema JAR). Spring's `JsonSerializer` normally stamps a `__TypeId__` header with the *producer's* fully-qualified class name, which wouldn't match the *consumer's* own class. Fixed by disabling that on the producer (`spring.json.add.type.headers: false`) and telling each consumer its own target type directly (`spring.json.value.default.type`, `spring.json.use.type.headers: false`) — matching is purely structural (same field names), not by class identity.
-
-**Local setup, once:**
-```bash
-docker compose up -d          # starts Postgres AND Kafka — repo root
-```
-Then run each service with `./mvnw spring-boot:run` from its own folder (default `local` Spring profile — Postgres at `localhost:5432`, Kafka at `localhost:9092`). In Kubernetes, `SPRING_PROFILES_ACTIVE=k8s` switches both: Postgres to `host.minikube.internal:5432`, Kafka to `host.minikube.internal:9094` — a **different port**, not just a different host, because Kafka's client protocol redirects to whatever address the broker advertises after the first connection, and one address can't be reachable from both "outside on the Mac" and "inside a minikube Pod" — see the `kafka` service in `docker-compose.yml` for the two-listener setup, and `k8s/README.md`.
+order. So the scenario above is really the second half of a two-step flow.
+The concepts below (§1–§4, then the Producer/Broker/Consumer failure
+scenarios) come first; [5. Full Flow](#5-full-flow--putting-the-concepts-together)
+at the end walks the whole thing end-to-end against the actual code in
+this repo, once every piece it uses has been explained.
 
 ---
 
@@ -169,6 +112,76 @@ Payment Service should not call Order Service, Notification Service, etc. direct
 
 ---
 
+## 5. Full Flow — Putting the Concepts Together
+
+Everything above was a piece in isolation. This is where they all show up
+at once, in one real request, fully wired end-to-end in this repo — no
+manual stand-in endpoints needed anymore.
+
+**High-level theory, before the diagram:**
+
+1. **Creating the order is plain, blocking REST — not an event.** A user is waiting for a definite answer ("your order is #1, status PENDING"). There's nothing to decouple yet, so §1's whole reason for reaching for Kafka doesn't apply here at all.
+2. **The payment's order-existence check is also plain, blocking REST**, for the same reason in reverse: `payment-service` needs a definite yes/no *before* it decides whether to accept the payment. Kafka communicates facts that already happened, not questions a caller is blocked waiting to have answered — so this stays a direct HTTP call, not a topic.
+3. **The publish is the actual moment Kafka enters the picture.** "A payment completed" is a fact, broadcast once instead of `payment-service` calling `order-service` and `notification-service` directly and waiting on both (§1). It's keyed by `orderId`, so every event for the same order lands on the same partition and stays in order (§3). It's sent with `acks=all` and an idempotent producer, so a network hiccup on the ack can't silently create a duplicate charge event (§P3, §P4).
+4. **Two independent consumer groups read that one topic, each on its own schedule** (§4) — `order-service`'s `order-group` and `notification-service`'s `notification-group` each get a full copy of the topic and their own offsets. One being slow, restarting, or briefly down never blocks or duplicates the other's work.
+5. **Each consumer commits its offset manually, only after its own side effect actually succeeds.** That's what makes "at least once, never zero times" (§C1) safe in practice here: a crash right before commit means the message gets redelivered, and redelivery is harmless because updating an order's status to a value it may already have is a no-op, not a second charge.
+
+Now the same flow, concretely:
+
+```
+Client                order-service          payment-service           Kafka                 order-service        notification-service
+  |                        |                        |                     |                        |                        |
+  |--POST /api/orders----->|                        |                     |                        |                        |
+  |                        |--save Order(PENDING)-->|                     |                        |                        |
+  |<--201 {id, PENDING}----|                        |                     |                        |                        |
+  |                        |                        |                     |                        |                        |
+  |--POST /payments {orderId, amount}-------------->|                     |                        |                        |
+  |                        |<--GET /api/orders/{id}-|                     |                        |                        |
+  |                        |--200 order exists----->|                     |                        |                        |
+  |                        |                        |--save Payment------>|                        |                        |
+  |<--201 {id, SUCCESS}----|                        |--publish "payment-completed"------------------>|                        |
+  |                        |                        |                     |--consume (order-group)->|                        |
+  |                        |                        |                     |          Order -> CONFIRMED                      |
+  |                        |                        |                     |--consume (notification-group)------------------->|
+  |                        |                        |                     |                    logs the notification
+```
+
+**Step 1 — create the order (plain REST, no Kafka):**
+```bash
+curl -X POST http://localhost:9101/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{"customerId":"CUST-1","amount":250.00}'
+# -> {"id":1,"customerId":"CUST-1","amount":250.00,"status":"PENDING","createdAt":"..."}
+```
+`OrderController` (`order-service`) → `OrderService.createOrder()` → `Order` saved to `order-srv-db` (Postgres) with status `PENDING`.
+
+**Step 2 — pay for that order (REST, enforces the "order must exist first" rule):**
+```bash
+curl -X POST http://localhost:9102/payments \
+  -H "Content-Type: application/json" \
+  -d '{"orderId":1,"amount":250.00}'
+# -> {"id":1,"orderId":1,"amount":250.00,"status":"SUCCESS","createdAt":"..."}
+```
+`PaymentController` → `PaymentServiceImpl.processPayment()` first calls `OrderServiceClient.getOrder(orderId)`, a real synchronous HTTP call to `order-service`'s `GET /api/orders/{id}`. If the order doesn't exist, `order-service` returns 404 and `payment-service` rejects the payment with 404 too — try `{"orderId":999999,...}` and see for yourself. Only if the order is confirmed to exist does it save a `Payment` row to `payment-srv-db`.
+
+**Step 3 — the publish.** After the save, `PaymentServiceImpl` publishes a `PaymentCompletedEvent(orderId, paymentId, status)` to topic `payment-completed`, keyed by `orderId` (`KafkaTemplate<String, PaymentCompletedEvent>`, `JsonSerializer`, `acks=all` + `enable.idempotence=true` — see §P3/P4 above). This is a **direct publish inside the same method**, not the transactional outbox pattern from §P2 — a crash between the DB save and the Kafka send can still drop the event. That's a known, accepted gap for this exercise; the outbox pattern is the real fix if this were production.
+
+**Step 4 — two independent consumers, both listening on `payment-completed`:**
+- `order-service` — `PaymentCompletedListener` (`groupId: order-group`) calls `OrderService.updateStatus(id, status)`, moving the order from `PENDING` to `CONFIRMED` (or `FAILED`). No dedup-by-message-id table: `updateStatus()` is naturally idempotent, so a redelivered message after a crash-before-ack is a harmless no-op — see §C1's "make the duplicate harmless, not impossible" in practice.
+- `notification-service` — `PaymentCompletedListener` (`groupId: notification-group`) calls `NotificationService.send(...)`, which just logs. No dedup here either — this service still has no DB on purpose, and a duplicate log line has no real consequence.
+
+Both use manual offset commit (`ack-mode: manual`, `Acknowledgment.acknowledge()` only after the DB update / send succeeds — see the worked example below) and `ErrorHandlingDeserializer` wrapping `JsonDeserializer`, so a malformed message logs and gets skipped by the container's default retry/skip behavior instead of crashing the listener thread (a lighter-weight stand-in for the full DLQ setup in §C2, which isn't wired here).
+
+**The cross-service JSON gotcha:** each service keeps its own local copy of `PaymentCompletedEvent` (different package per service — deliberate, no shared event-schema JAR). Spring's `JsonSerializer` normally stamps a `__TypeId__` header with the *producer's* fully-qualified class name, which wouldn't match the *consumer's* own class. Fixed by disabling that on the producer (`spring.json.add.type.headers: false`) and telling each consumer its own target type directly (`spring.json.value.default.type`, `spring.json.use.type.headers: false`) — matching is purely structural (same field names), not by class identity.
+
+**Local setup, once:**
+```bash
+docker compose up -d          # starts Postgres AND Kafka — repo root
+```
+Then run each service with `./mvnw spring-boot:run` from its own folder (default `local` Spring profile — Postgres at `localhost:5432`, Kafka at `localhost:9092`). In Kubernetes, `SPRING_PROFILES_ACTIVE=k8s` switches both: Postgres to `host.minikube.internal:5432`, Kafka to `host.minikube.internal:9094` — a **different port**, not just a different host, because Kafka's client protocol redirects to whatever address the broker advertises after the first connection, and one address can't be reachable from both "outside on the Mac" and "inside a minikube Pod" — see the `kafka` service in `docker-compose.yml` for the two-listener setup, and `k8s/README.md`.
+
+---
+
 # WORKED EXAMPLE — Spring Boot
 
 ## What's Actually Running In This Repo
@@ -194,7 +207,7 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     public PaymentDto processPayment(CreatePaymentRequest request) {
         // amount validation, then orderServiceClient.getOrder(request.orderId())
-        // — see §0 Step 1/2 — omitted here
+        // — see §5 Step 1/2 — omitted here
 
         Payment payment = new Payment();
         payment.setOrderId(request.orderId());
@@ -237,7 +250,7 @@ spring:
         # never match. Turning it off makes matching purely structural.
         spring.json.add.type.headers: false
 ```
-Plus per-profile `bootstrap-servers` — `localhost:9092` (`application-local.yml`) or `host.minikube.internal:9094` (`application-k8s.yml`, a **different port** from Postgres's `host.minikube.internal:5432` — see the "cross-service JSON gotcha" and local-setup notes in §0 for why).
+Plus per-profile `bootstrap-servers` — `localhost:9092` (`application-local.yml`) or `host.minikube.internal:9094` (`application-k8s.yml`, a **different port** from Postgres's `host.minikube.internal:5432` — see the "cross-service JSON gotcha" and local-setup notes in §5 for why).
 
 **Consumer — `order-service/src/main/java/.../messaging/PaymentCompletedListener.java`:**
 ```java
@@ -429,7 +442,7 @@ containers).
 It also exposes **two listeners on two different ports** — `9092`
 (advertised as `localhost`, for anything running directly on the Mac) and
 `9094` (advertised as `host.minikube.internal`, for Pods in minikube). See
-§0's "Local setup" and `k8s/README.md` for why one address can't cover
+§5's "Local setup" and `k8s/README.md` for why one address can't cover
 both. The commands below use `localhost:9092`, i.e. the Mac-local path.
 
 The CLI scripts (`kafka-topics.sh` etc.) live **inside the container**, not
@@ -474,7 +487,7 @@ docker exec -it workouts-kafka /opt/kafka/bin/kafka-console-producer.sh \
 # then type: 1:{"orderId":1,"paymentId":1,"status":"SUCCESS"}
 # — matches PaymentCompletedEvent's actual field names (orderId/paymentId/status),
 # and note there's no __TypeId__ header needed: see the "cross-service JSON
-# gotcha" in §0 for why the consumers deserialize this structurally.
+# gotcha" in §5 for why the consumers deserialize this structurally.
 ```
 
 ## Consume messages from the terminal

@@ -18,20 +18,20 @@ spec:
           image: notification-service:stage1
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8084
+            - containerPort: 9103
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: k8s
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
-              port: 8084
+              port: 9103
             initialDelaySeconds: 10
             periodSeconds: 5
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
-              port: 8084
+              port: 9103
             initialDelaySeconds: 20
             periodSeconds: 10
 ---
@@ -46,5 +46,5 @@ spec:
     app: notification-service
   ports:
     - name: http
-      port: 8084
-      targetPort: 8084
+      port: 9103
+      targetPort: 9103

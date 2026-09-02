@@ -3,4 +3,4 @@
 # ClusterIP Service DNS name instead of localhost.
 services:
   order:
-    url: http://order-service:9091
+    url: http://order-service:9101

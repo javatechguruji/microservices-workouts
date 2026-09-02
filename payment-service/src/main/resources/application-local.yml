@@ -10,4 +10,4 @@ spring:
     bootstrap-servers: localhost:9092
 
 services:
-  order-service-url: http://localhost:9091
+  order-service-url: http://localhost:9101

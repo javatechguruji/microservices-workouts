@@ -13,4 +13,4 @@ spring:
     bootstrap-servers: host.minikube.internal:9094
 
 services:
-  order-service-url: http://order-service:9091
+  order-service-url: http://order-service:9101

@@ -5,14 +5,18 @@ practice real microservices concerns end-to-end. See `INTERVIEW_TOPICS.md`
 for the full topic checklist and `k8s/` for the Kubernetes-native
 infrastructure story (no Eureka, no Config Server).
 
+All microservice ports follow one `91xx` sequence, easy to remember —
+`9092`/`9094` (Kafka) and `9090` (reserved for Prometheus, not yet added)
+are deliberately skipped, see `k8s/README.md`.
+
 | Service | Port | Responsibility |
 |---|---|---|
-| `gateway-service` | 8000 | API Gateway (Spring Cloud Gateway) — routes to `order-service` |
-| `product-service` | 8081 | Product catalog (H2 for now, MongoDB later) |
-| `inventory-service` | 8082 | Stock/inventory (H2) |
-| `order-service` | 9091 | Orders — Postgres (`order-srv-db`) |
-| `payment-service` | 8083 | Payments — calls `order-service` to confirm an order exists before accepting payment; Postgres (`payment-srv-db`); publishes `payment-completed` to Kafka |
-| `notification-service` | 8084 | Sends notifications — no DB; consumes `payment-completed` from Kafka |
+| `gateway-service` | 9100 | API Gateway (Spring Cloud Gateway) — routes to `order-service` |
+| `order-service` | 9101 | Orders — Postgres (`order-srv-db`) |
+| `payment-service` | 9102 | Payments — calls `order-service` to confirm an order exists before accepting payment; Postgres (`payment-srv-db`); publishes `payment-completed` to Kafka |
+| `notification-service` | 9103 | Sends notifications — no DB; consumes `payment-completed` from Kafka |
+| `product-service` | 9104 | Product catalog (H2 for now, MongoDB later) |
+| `inventory-service` | 9105 | Stock/inventory (H2) |
 
 Each service is an independent Spring Boot Maven project (own `pom.xml`,
 own `Application` class) — no multi-module reactor build, so each can be

@@ -30,7 +30,7 @@ spring:
       ack-mode: manual
 
 server:
-  port: 9091
+  port: 9101
 
 management:
   endpoint:

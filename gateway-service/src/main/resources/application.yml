@@ -16,7 +16,7 @@ spring:
             - Path=/api/orders/**
 
 server:
-  port: 8000
+  port: 9100
 
 management:
   endpoint:

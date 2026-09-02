@@ -2,4 +2,4 @@
 # order-service is reached on the port it binds to on localhost.
 services:
   order:
-    url: http://localhost:9091
+    url: http://localhost:9101

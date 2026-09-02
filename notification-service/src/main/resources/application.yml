@@ -20,7 +20,7 @@ spring:
       ack-mode: manual
 
 server:
-  port: 8084
+  port: 9103
 
 management:
   endpoint:

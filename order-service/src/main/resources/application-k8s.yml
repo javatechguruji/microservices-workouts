@@ -12,5 +12,5 @@ spring:
     bootstrap-servers: host.minikube.internal:9094
 
 services:
-  product-service-url: http://product-service:8081
-  inventory-service-url: http://inventory-service:8082
+  product-service-url: http://product-service:9104
+  inventory-service-url: http://inventory-service:9105

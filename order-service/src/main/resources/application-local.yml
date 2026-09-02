@@ -13,5 +13,5 @@ spring:
 # hostname:port here; in Kubernetes these become the Service DNS names
 # instead of hardcoded localhost URLs (see application-k8s.yml).
 services:
-  product-service-url: http://localhost:8081
-  inventory-service-url: http://localhost:8082
+  product-service-url: http://localhost:9104
+  inventory-service-url: http://localhost:9105
