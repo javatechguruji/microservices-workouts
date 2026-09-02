@@ -21,12 +21,12 @@
 - [ ] Compare this synchronous check against making the whole "does this order exist" question itself event-driven instead
 
 ## Kafka — This Is the Producer
-- [ ] Publish `payment-completed` after a successful save — see `PaymentService.processPayment()` for the marked TODO
-- [ ] Same event, `status` field distinguishes SUCCESS/FAILED (matches the console-producer example in `docs/kafka-notes.md`) — vs. a separate `payment-failed` topic. Trade-offs?
-- [ ] Transactional Outbox — write the event to a local table in the same transaction as the payment, relay separately (`docs/kafka-notes.md` P2)
-- [ ] Idempotent producer config (`enable.idempotence=true`)
+- [x] Publish `payment-completed` after a successful save — see `PaymentServiceImpl.processPayment()`
+- [x] Same event, `status` field distinguishes SUCCESS/FAILED (matches the console-producer example in `docs/kafka-notes.md`) — vs. a separate `payment-failed` topic. Trade-offs?
+- [ ] Transactional Outbox — write the event to a local table in the same transaction as the payment, relay separately (`docs/kafka-notes.md` P2). Currently a **direct** publish — a crash between the DB save and the Kafka send can still drop the event; known, accepted gap.
+- [x] Idempotent producer config (`enable.idempotence=true`, `acks=all`)
 
 ## Testing
 - [ ] `@DataJpaTest` for `PaymentRepository`
 - [ ] Mock `OrderServiceClient` (`@MockBean`) to test the "order not found" 404 path without a real order-service running
-- [ ] Once Kafka is wired: embedded Kafka test verifying the event is actually published on success
+- [ ] Embedded Kafka test verifying the event is actually published on success

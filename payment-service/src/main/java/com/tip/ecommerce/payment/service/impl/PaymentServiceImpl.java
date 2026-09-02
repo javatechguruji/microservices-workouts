@@ -5,9 +5,13 @@ import com.tip.ecommerce.payment.dto.CreatePaymentRequest;
 import com.tip.ecommerce.payment.dto.PaymentDto;
 import com.tip.ecommerce.payment.entity.Payment;
 import com.tip.ecommerce.payment.entity.PaymentStatus;
+import com.tip.ecommerce.payment.event.PaymentCompletedEvent;
 import com.tip.ecommerce.payment.repository.PaymentRepository;
 import com.tip.ecommerce.payment.service.PaymentService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -17,12 +21,19 @@ import java.time.Instant;
 @Service
 public class PaymentServiceImpl implements PaymentService {
 
+    private static final String TOPIC = "payment-completed";
+    private static final Logger log = LoggerFactory.getLogger(PaymentServiceImpl.class);
+
     private final PaymentRepository paymentRepository;
     private final OrderServiceClient orderServiceClient;
+    private final KafkaTemplate<String, PaymentCompletedEvent> kafkaTemplate;
 
-    public PaymentServiceImpl(PaymentRepository paymentRepository, OrderServiceClient orderServiceClient) {
+    public PaymentServiceImpl(PaymentRepository paymentRepository,
+                               OrderServiceClient orderServiceClient,
+                               KafkaTemplate<String, PaymentCompletedEvent> kafkaTemplate) {
         this.paymentRepository = paymentRepository;
         this.orderServiceClient = orderServiceClient;
+        this.kafkaTemplate = kafkaTemplate;
     }
 
     @Override
@@ -42,10 +53,18 @@ public class PaymentServiceImpl implements PaymentService {
         payment.setCreatedAt(Instant.now());
         payment = paymentRepository.save(payment);
 
-        // TODO Kafka: publish to topic "payment-completed", keyed by
-        // orderId, payload e.g. {"orderId":..,"paymentId":..,"status":"SUCCESS"}.
-        // order-service and notification-service both consume this topic
-        // (see docs/kafka-notes.md).
+        // Direct publish, not the transactional outbox pattern (see
+        // docs/kafka-notes.md P2) — the DB write and the publish are two
+        // separate operations, so a crash between them can drop the event.
+        // Fine for this exercise; the outbox pattern is the real fix.
+        Long orderId = payment.getOrderId();
+        PaymentCompletedEvent event = new PaymentCompletedEvent(orderId, payment.getId(), payment.getStatus().name());
+        kafkaTemplate.send(TOPIC, String.valueOf(orderId), event)
+                .whenComplete((result, ex) -> {
+                    if (ex != null) {
+                        log.error("Failed to publish {} for order {}", TOPIC, orderId, ex);
+                    }
+                });
 
         return toDto(payment);
     }

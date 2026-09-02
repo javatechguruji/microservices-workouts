@@ -6,12 +6,12 @@
 > Legend: `[ ]` pending · `[x]` completed
 
 ## Kafka — This Is a Consumer
-- [ ] `@KafkaListener(topics = "payment-completed", groupId = "notification-group")` — call `NotificationService.send(...)` from it (see `docs/kafka-notes.md` worked example)
-- [ ] Manual ack (`enable-auto-commit: false`) — only commit after the notification actually "sends"
-- [ ] Consumer-side idempotency — same message re-delivered after a crash-before-commit; what's the dedupe key without a DB here? (worth adding a `ProcessedMessage` table once this stops being a demo)
-- [ ] What happens to a malformed message — DLQ topic `payment-completed-dlq` (`docs/kafka-notes.md` C2)
+- [x] `@KafkaListener(topics = "payment-completed", groupId = "notification-group")` — `PaymentCompletedListener` calls `NotificationService.send(...)`
+- [x] Manual ack (`enable-auto-commit: false`, `ack-mode: manual`) — only commit after the notification actually "sends"
+- [ ] Consumer-side idempotency — deliberately skipped: no DB here, and a duplicate log line has no real consequence. Worth revisiting with a `ProcessedMessage` table if this stops being a demo.
+- [ ] What happens to a malformed message — currently just `ErrorHandlingDeserializer` + the container's default retry/skip, not a real DLQ topic `payment-completed-dlq` (`docs/kafka-notes.md` C2)
 - [ ] Consumer group sizing — multiple replicas of this service in one `notification-group`, partitions divided among them (`docs/kafka-notes.md` §4)
 
 ## Testing
 - [ ] Embedded Kafka test: publish a `payment-completed` message, assert `NotificationService.send` gets called
-- [ ] `POST /notifications` — the manual-trigger path already in place, useful even after Kafka is wired for local smoke tests
+- [x] `POST /notifications` — the manual-trigger path, still useful for local smoke tests independent of Kafka

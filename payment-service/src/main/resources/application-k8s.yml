@@ -7,6 +7,10 @@ spring:
     url: jdbc:postgresql://host.minikube.internal:5432/payment-srv-db
     username: postgres
     password: postgres
+  kafka:
+    # Kafka's PLAINTEXT_K8S listener (port 9094), separate from the 9092
+    # port Mac-local processes use — see docker-compose.yml.
+    bootstrap-servers: host.minikube.internal:9094
 
 services:
   order-service-url: http://order-service:9091

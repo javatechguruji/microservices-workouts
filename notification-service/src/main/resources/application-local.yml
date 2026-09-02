@@ -1,0 +1,6 @@
+# Active when running directly on the Mac (IntelliJ, mvn spring-boot:run).
+# Kafka reached via docker-compose's port mapping on localhost — run
+# `docker compose up -d` from the repo root first.
+spring:
+  kafka:
+    bootstrap-servers: localhost:9092

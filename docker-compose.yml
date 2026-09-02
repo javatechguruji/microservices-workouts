@@ -14,5 +14,33 @@ services:
 
   # MongoDB for product-service goes here later.
 
+  kafka:
+    image: apache/kafka:3.8.0
+    container_name: workouts-kafka
+    restart: unless-stopped
+    ports:
+      # PLAINTEXT_HOST — for processes running directly on the Mac
+      # (mvn spring-boot:run), advertised as localhost.
+      - "9092:9092"
+      # PLAINTEXT_K8S — for pods running inside minikube, advertised as
+      # host.minikube.internal. Two separate ports because Kafka clients
+      # reconnect using whatever address the broker advertises after the
+      # first handshake — one address can't be reachable from both
+      # "outside on the Mac" and "inside a minikube Pod" at once.
+      - "9094:9094"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT_HOST://:9092,PLAINTEXT_K8S://:9094,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT_HOST://localhost:9092,PLAINTEXT_K8S://host.minikube.internal:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,PLAINTEXT_K8S:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_HOST
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      CLUSTER_ID: ci8CzldyQfKoDVpQ7YR2Vg
+
 volumes:
   postgres-data:

@@ -8,9 +8,15 @@
 > Legend: `[ ]` pending · `[x]` completed
 
 ## Domain & Persistence
-- [x] Application skeleton — Spring Boot + JPA + H2 wired (`orderdb`)
-- [ ] Order entity & state machine (`CREATED` → `CONFIRMED` / `FAILED` / `CANCELLED`)
+- [x] Application skeleton — Spring Boot + JPA + Postgres wired (`order-srv-db`)
+- [x] Order entity & state machine (`PENDING` → `CONFIRMED` / `FAILED`) — driven by the Kafka consumer below, not a full Saga yet
 - [ ] Order line items — modeling product references without duplicating product data
+
+## Kafka — This Is a Consumer (of payment-service's "payment-completed")
+- [x] `@KafkaListener(topics = "payment-completed", groupId = "order-group")` — `PaymentCompletedListener` calls `OrderService.updateStatus(...)` (see `docs/kafka-notes.md` §0)
+- [x] Manual ack (`enable-auto-commit: false`, `ack-mode: manual`)
+- [x] No dedup-by-message-id table — `updateStatus()` is naturally idempotent, so a redelivered message is a harmless no-op
+- [ ] What happens to a malformed message — currently just `ErrorHandlingDeserializer` + the container's default retry/skip, not a real DLQ topic (`docs/kafka-notes.md` C2)
 
 ## Orchestration Flow (this service IS the Saga orchestrator)
 - [ ] Call `product-service` to validate product exists & get current price

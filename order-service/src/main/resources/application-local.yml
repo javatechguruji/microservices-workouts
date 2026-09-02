@@ -6,6 +6,8 @@ spring:
     url: jdbc:postgresql://localhost:5432/order-srv-db
     username: postgres
     password: postgres
+  kafka:
+    bootstrap-servers: localhost:9092
 
 # order-service calls product-service and inventory-service directly by
 # hostname:port here; in Kubernetes these become the Service DNS names

@@ -19,11 +19,12 @@ own `Application` class) — no multi-module reactor build, so each can be
 run, tested, and eventually deployed independently, same as they would be
 in production.
 
-`order-service` and `payment-service` need Postgres. It runs in Docker via
-`docker-compose.yml` at the repo root — start it once with
+`order-service` and `payment-service` need Postgres; `payment-service`,
+`order-service`, and `notification-service` need Kafka. Both run in Docker
+via `docker-compose.yml` at the repo root — start them once with
 `docker compose up -d`. Kubernetes deployment for the microservices
 themselves goes through plain `kubectl apply -f k8s/...`, not
-docker-compose — see `k8s/README.md` for why Postgres deliberately lives
+docker-compose — see `k8s/README.md` for why infra deliberately lives
 outside the cluster. See `docs/kafka-notes.md` for the full
 order → payment → Kafka → (order, notification) event flow.
 
