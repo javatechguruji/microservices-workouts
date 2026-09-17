@@ -24,7 +24,8 @@ public class PaymentCompletedListener {
     // updateStatus() is naturally idempotent — re-applying the same status
     // to an already-updated order is a harmless no-op, so a redelivered
     // message after a crash-before-commit needs no special handling.
-    @KafkaListener(topics = "payment-completed", groupId = "order-group")
+    @KafkaListener(topics = "payment-completed",
+            groupId = "order-group")
     public void handlePaymentCompleted(PaymentCompletedEvent event, Acknowledgment ack) {
         OrderStatus newStatus = "SUCCESS".equals(event.status()) ? OrderStatus.CONFIRMED : OrderStatus.FAILED;
         orderService.updateStatus(event.orderId(), newStatus);

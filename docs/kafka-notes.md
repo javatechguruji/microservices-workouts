@@ -57,6 +57,24 @@ Payment Service should not call Order Service, Notification Service, etc. direct
 - `min.insync.replicas=2` (with replication factor 3) — Kafka refuses to accept a write at all unless at least 2 replicas are in sync. Prevents a write from being "confirmed" when only one copy (the leader) has it.
 - Trade-off: this sacrifices some availability (writes may fail/retry) in exchange for guaranteed durability — the right choice for payment-critical data.
 
+## P5. Batching, Timeouts, Retries — the knobs, and what they actually control
+- **There is no "N messages per batch" setting.** Batching is governed by two things, whichever hits first:
+  - `batch.size` — the batch size limit in **bytes**, per partition. Not a message count. Kafka's default is 16384 (16KB).
+  - `linger.ms` — how long the producer waits for a batch to fill before sending it anyway. Default `0` means "send immediately," which means almost no batching happens under light load — a small non-zero value (e.g. `5`) trades a few ms of latency for meaningfully fuller batches and fewer, more efficient requests to the broker.
+- **Three different timeouts, easy to conflate:**
+  - `request.timeout.ms` (default 30000) — max wait for a response to *one* produce request.
+  - `delivery.timeout.ms` (default 120000) — the real ceiling: total time from `send()` to final success/failure, covering `linger.ms` + every retry + backoff in between. Kafka enforces `delivery.timeout.ms >= linger.ms + request.timeout.ms` at startup — get this wrong and the app fails to boot, not fails silently at runtime.
+  - `max.block.ms` (default 60000) — separate from both: how long the `send()` call itself may block if the local send buffer (`buffer.memory`) is full or partition metadata isn't available yet, before throwing rather than hanging. Matters most when `send()` is called synchronously inside a request-handling thread, like it is in this repo's `PaymentServiceImpl`.
+- **Retries, once idempotence is on, aren't really bounded by `retries` — they're bounded by `delivery.timeout.ms`.** With `enable.idempotence=true`, Kafka already defaults `retries` to `Integer.MAX_VALUE` internally; setting a small custom `retries` value is a common footgun since people assume it caps retry *time*, when `delivery.timeout.ms` is what actually does that. `retry.backoff.ms` (default 100) controls the pause between attempts.
+- **`compression.type`** (`none` by default) — almost always turned on in real deployments (`snappy`, `lz4`, or `zstd`) since it compresses whole batches, reducing both network transfer and broker-side disk usage at the cost of a little producer/consumer CPU. Pairs naturally with `batch.size`/`linger.ms` — there's more to compress once there's an actual batch.
+- **`client.id`** — labels this producer in the broker's own metrics, logs, and quota rules. Cheap to set, genuinely useful once more than one producer instance exists and you need to tell them apart operationally.
+
+## Also worth knowing (not wired in this repo)
+- **Partitioning for un-keyed records** — this repo always keys by `orderId`, so it's moot here, but: since Kafka 2.4 (KIP-480) the default partitioner uses *sticky* partitioning for records with no key — batching several null-key records onto the same partition briefly rather than strict round-robin — specifically to make `batch.size`/`linger.ms` actually effective for that traffic.
+- **`max.request.size`** (default ~1MB) — caps a single produce request; must stay under the broker's own `message.max.bytes`. Relevant once event payloads can grow unpredictably.
+- **`interceptor.classes`** — a hook for cross-cutting producer concerns (tracing header injection, audit logging) without touching business code — the natural place to wire something like the OpenTelemetry tracing mentioned earlier in this doc's tooling discussion.
+- **Transactions / `transactional.id`** (`spring.kafka.producer.transaction-id-prefix` in Spring Boot) — the level *beyond* idempotence: idempotence stops a retry from duplicating one send, transactions make a set of sends (possibly across multiple topics/partitions) atomic. Not needed here (this repo sends one event per payment); it's what you'd reach for in a true read-Kafka-process-write-Kafka pipeline.
+
 ---
 
 # BROKER SIDE
@@ -240,6 +258,13 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
       acks: all
+      # First-class Spring Boot producer properties — everything else
+      # Kafka supports has to go under properties: below, using the raw
+      # kafka-clients name (see §P5 for what each of these actually does).
+      client-id: payment-service-producer
+      compression-type: snappy
+      batch-size: 16384            # bytes per batch, not a message count
+      retries: 2147483647          # Integer.MAX_VALUE — already the effective default once enable.idempotence=true; set explicitly so it's visible. delivery.timeout.ms is the real ceiling.
       properties:
         enable.idempotence: true
         max.in.flight.requests.per.connection: 5
@@ -249,6 +274,25 @@ spring:
         # PaymentCompletedEvent (different package), so that header would
         # never match. Turning it off makes matching purely structural.
         spring.json.add.type.headers: false
+        linger.ms: 5
+        request.timeout.ms: 30000
+        delivery.timeout.ms: 120000  # must be >= linger.ms + request.timeout.ms
+        max.block.ms: 10000
+        retry.backoff.ms: 500
+```
+Verified against the running broker — `payment-service`'s actual startup log prints the effective merged config (defaults + overrides), confirming every value above really took effect, not just that the YAML parsed:
+```
+acks = -1
+batch.size = 16384
+client.id = payment-service-producer-1
+compression.type = snappy
+delivery.timeout.ms = 120000
+enable.idempotence = true
+linger.ms = 5
+max.block.ms = 10000
+request.timeout.ms = 30000
+retries = 2147483647
+retry.backoff.ms = 500
 ```
 Plus per-profile `bootstrap-servers` — `localhost:9092` (`application-local.yml`) or `host.minikube.internal:9094` (`application-k8s.yml`, a **different port** from Postgres's `host.minikube.internal:5432` — see the "cross-service JSON gotcha" and local-setup notes in §5 for why).
 
@@ -447,18 +491,76 @@ both. The commands below use `localhost:9092`, i.e. the Mac-local path.
 
 The CLI scripts (`kafka-topics.sh` etc.) live **inside the container**, not
 on your Mac's PATH — every command below is run via `docker exec
-workouts-kafka /opt/kafka/bin/<script>`. If you separately have a local
-Kafka CLI install, drop the `docker exec workouts-kafka /opt/kafka/bin/`
+kafka /opt/kafka/bin/<script>`. If you separately have a local
+Kafka CLI install, drop the `docker exec kafka /opt/kafka/bin/`
 prefix and the commands are identical.
 
-Optional: a Kafka UI tool (e.g. "Kafka UI", "Offset Explorer" / Kafdrop) gives a visual dashboard instead of command line only — useful for quickly browsing topics and messages. Not set up in this repo.
+A Kafka UI **is** set up in this repo: `kafka-ui` (Kafbat UI) in
+`docker-compose.yml`, at **http://localhost:8089** — browse topics,
+messages, consumer groups and lag visually instead of via the CLI below.
+
+## Gotcha: Kafka's data volume didn't actually persist anything (interview-worthy)
+
+This actually happened while building this repo's setup, and it's a good
+one to be able to explain end-to-end: **the compose file declared a named
+volume for Kafka's data, container recreates kept happening (listener
+config changes), and every single time all topics, messages, and consumer
+group offsets came back empty** — as if the volume did nothing at all.
+
+**Root cause, in two parts:**
+
+1. **Restart vs. recreate.** A plain `docker restart kafka` keeps the same
+   container and its filesystem intact — nothing is lost. But `docker
+   compose up -d` after an env/port/image change does a **recreate**:
+   stop → remove the old container → create a brand-new one. Any data that
+   only lived in the old container's writable layer (or an *anonymous*
+   volume tied to that specific container) is gone at that point — it's
+   orphaned, not migrated. This is exactly what happened to the Postgres
+   container earlier in this project too, before it was pinned to a named,
+   external volume.
+
+2. **The volume was mounted at a path Kafka never wrote to.** The
+   `apache/kafka` image declares a `VOLUME` at `/var/lib/kafka/data` — so
+   mounting a named volume there *looks* correct and silences no warnings.
+   But that image's actual default `log.dirs` (where the broker really
+   writes topic segments) is `/tmp/kafka-logs`, a completely different,
+   **undeclared**, ephemeral path inside the container. Confirmed directly
+   from the broker's own startup log:
+   ```
+   INFO Loading logs from log dirs ArrayBuffer(/tmp/kafka-logs) (kafka.log.LogManager)
+   ```
+   So the mounted volume was real and correctly configured — Kafka just
+   never wrote a single byte to it. Every recreate silently started the
+   broker with a fresh, empty `/tmp/kafka-logs`, regardless of the volume.
+
+**The fix** — two changes together, in `docker-compose.yml`:
+```yaml
+kafka:
+  volumes:
+    - kafka-data:/var/lib/kafka/data
+  environment:
+    KAFKA_LOG_DIRS: /var/lib/kafka/data   # <-- the part that was missing
+```
+Declaring the volume mount alone did nothing; `KAFKA_LOG_DIRS` is what
+actually redirects the broker's `log.dirs` onto the mounted path. Verified
+by producing a message, force-removing the container (`docker rm -f
+kafka`), bringing it back up via `docker compose up -d`, and confirming
+the message and consumer group offsets were both still there.
+
+**Why this is worth knowing for an interview:** it's a clean example of
+the difference between "a volume is declared/mounted" and "the
+application is actually configured to use it" — a `VOLUME` line in a
+Dockerfile is a hint about *where an app might store state*, not a
+guarantee the app's own config points there. Always verify against the
+app's actual effective config (or its startup logs) rather than trusting
+the image's declared volume path.
 
 ## Create a topic with partitions and replication factor
 
 This is the actual command used to create this repo's `payment-completed`
 topic — replication factor **1**, not 3, because there's only one broker:
 ```bash
-docker exec workouts-kafka /opt/kafka/bin/kafka-topics.sh --create \
+docker exec kafka /opt/kafka/bin/kafka-topics.sh --create \
   --topic payment-completed \
   --partitions 3 \
   --replication-factor 1 \
@@ -467,19 +569,19 @@ docker exec workouts-kafka /opt/kafka/bin/kafka-topics.sh --create \
 
 ## List all topics
 ```bash
-docker exec workouts-kafka /opt/kafka/bin/kafka-topics.sh --list --bootstrap-server localhost:9092
+docker exec kafka /opt/kafka/bin/kafka-topics.sh --list --bootstrap-server localhost:9092
 ```
 
 ## Describe a topic (see partitions, leader, ISR)
 ```bash
-docker exec workouts-kafka /opt/kafka/bin/kafka-topics.sh --describe \
+docker exec kafka /opt/kafka/bin/kafka-topics.sh --describe \
   --topic payment-completed \
   --bootstrap-server localhost:9092
 ```
 
 ## Produce messages from the terminal
 ```bash
-docker exec -it workouts-kafka /opt/kafka/bin/kafka-console-producer.sh \
+docker exec -it kafka /opt/kafka/bin/kafka-console-producer.sh \
   --topic payment-completed \
   --bootstrap-server localhost:9092 \
   --property "parse.key=true" \
@@ -492,7 +594,7 @@ docker exec -it workouts-kafka /opt/kafka/bin/kafka-console-producer.sh \
 
 ## Consume messages from the terminal
 ```bash
-docker exec -it workouts-kafka /opt/kafka/bin/kafka-console-consumer.sh \
+docker exec -it kafka /opt/kafka/bin/kafka-console-consumer.sh \
   --topic payment-completed \
   --bootstrap-server localhost:9092 \
   --from-beginning
@@ -504,7 +606,7 @@ docker exec -it workouts-kafka /opt/kafka/bin/kafka-console-consumer.sh \
 running in this repo (`order-service` and `notification-service`
 respectively):
 ```bash
-docker exec workouts-kafka /opt/kafka/bin/kafka-consumer-groups.sh \
+docker exec kafka /opt/kafka/bin/kafka-consumer-groups.sh \
   --describe \
   --group order-group \
   --bootstrap-server localhost:9092
@@ -512,7 +614,7 @@ docker exec workouts-kafka /opt/kafka/bin/kafka-consumer-groups.sh \
 
 ## List all consumer groups
 ```bash
-docker exec workouts-kafka /opt/kafka/bin/kafka-consumer-groups.sh --list --bootstrap-server localhost:9092
+docker exec kafka /opt/kafka/bin/kafka-consumer-groups.sh --list --bootstrap-server localhost:9092
 # -> order-group
 #    notification-group
 ```

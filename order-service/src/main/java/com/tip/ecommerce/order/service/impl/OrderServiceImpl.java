@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.util.List;
 
 @Service
 public class OrderServiceImpl implements OrderService {
@@ -35,6 +36,13 @@ public class OrderServiceImpl implements OrderService {
     @Override
     public OrderDto getOrder(Long id) {
         return toDto(findOrThrow(id));
+    }
+
+    @Override
+    public List<OrderDto> getAllOrders() {
+        return orderRepository.findAll().stream()
+                .map(this::toDto)
+                .toList();
     }
 
     @Override

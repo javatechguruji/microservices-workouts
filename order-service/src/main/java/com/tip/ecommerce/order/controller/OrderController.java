@@ -7,6 +7,8 @@ import com.tip.ecommerce.order.service.OrderService;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/orders")
 public class OrderController {
@@ -21,6 +23,11 @@ public class OrderController {
     @ResponseStatus(HttpStatus.CREATED)
     public OrderDto createOrder(@RequestBody CreateOrderRequest request) {
         return orderService.createOrder(request);
+    }
+
+    @GetMapping
+    public List<OrderDto> getAllOrders() {
+        return orderService.getAllOrders();
     }
 
     @GetMapping("/{id}")

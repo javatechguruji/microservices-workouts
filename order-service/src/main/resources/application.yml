@@ -17,8 +17,10 @@ spring:
 
   kafka:
     consumer:
-      group-id: order-group
-      enable-auto-commit: false
+      group-id: order-group          # consumers with the same group-id share the topic's partitions between them — each partition only ever goes to one consumer in the group at a time
+      client-id: order-service-consumer   # this consumer's name, so it's easy to spot in Kafka's own logs, metrics, and quotas
+      enable-auto-commit: false      # don't let Kafka commit offsets automatically on a timer — we commit ourselves, only after the DB update actually succeeds (see ack-mode below)
+      auto-offset-reset: earliest    # if this group has never committed an offset before (brand new group, or its old offset expired), start from the very first message on the topic instead of only new ones — safer default so a fresh consumer group doesn't silently skip history
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
       properties:
@@ -26,8 +28,14 @@ spring:
         spring.json.trusted.packages: com.tip.ecommerce.order.event
         spring.json.value.default.type: com.tip.ecommerce.order.event.PaymentCompletedEvent
         spring.json.use.type.headers: false
+        max.poll.records: 100          # how many messages one poll() call is allowed to hand us at once — a smaller batch means we finish processing it (and can commit) faster, so we're less likely to be seen as stuck
+        max.poll.interval.ms: 300000   # the real deadline: how long we're allowed to sit between poll() calls while processing a batch before the broker decides we're dead and hands our partitions to another consumer — must comfortably cover our worst-case processing time for one batch
+        session.timeout.ms: 45000      # separate from the above — if our background heartbeat thread goes quiet for this long (e.g. this instance crashed or froze), the broker declares us dead and rebalances, even if we're not in the middle of processing
+        heartbeat.interval.ms: 15000   # how often that background thread pings the broker to say "still alive" — kept well under session.timeout.ms (roughly a third of it) so a couple of missed pings don't immediately trigger a rebalance
+        isolation.level: read_committed   # if a producer ever sends with Kafka transactions, only hand us messages from transactions that actually committed — ignore anything from a transaction that was aborted, even though it's technically sitting in the log
     listener:
-      ack-mode: manual
+      ack-mode: manual   # we tell Spring exactly when a message is "done" (see PaymentCompletedListener's ack.acknowledge()) — only after our own processing succeeds, instead of before, so a crash mid-processing means the message gets redelivered, not silently lost
+      concurrency: 1      # run 1 listener thread in this instance, each consuming a different partition in parallel — must not exceed the topic's actual partition count (payment-completed currently has just 1), or the extra threads just sit idle with nothing to consume; raise this only after the topic itself is repartitioned
 
 server:
   port: 9101

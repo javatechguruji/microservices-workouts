@@ -42,6 +42,10 @@ public class PaymentServiceImpl implements PaymentService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "amount must be greater than zero");
         }
 
+        paymentRepository.findByOrderIdAndStatus(request.orderId(),PaymentStatus.SUCCESS)
+                .ifPresent((p)->{
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Payment Already Exist for this order");
+                });
         // Blocks payment for an order that doesn't exist — the REST
         // enforcement of "you must create an order before you can pay".
         orderServiceClient.getOrder(request.orderId());

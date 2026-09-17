@@ -17,13 +17,25 @@ spring:
 
   kafka:
     producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-      acks: all
+      # spring.kafka.producer.* has its own YAML key only for these few —
+      # everything else Kafka supports goes under properties: below,
+      # using Kafka's own dotted name.
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer   # turns the message key (orderId) into bytes to send over the network
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer   # turns the event object into JSON bytes to send over the network
+      acks: all                    # don't treat the send as successful until every in-sync replica has a copy, not just the leader
+      client-id: payment-service-producer   # this producer's name, so it's easy to spot in Kafka's own logs, metrics, and quotas
+      compression-type: snappy     # compress each batch before sending — smaller over the network and cheaper for the broker to store
+      batch-size: 16384            # max size of one batch, in BYTES — not a count of messages, see linger.ms below
+      retries: 2147483647          # keep retrying a failed send almost forever — delivery.timeout.ms below is what actually limits the total wait, not this number
       properties:
-        enable.idempotence: true
-        max.in.flight.requests.per.connection: 5
-        spring.json.add.type.headers: false
+        enable.idempotence: true   # if this producer retries a send, stop Kafka from saving that message twice
+        max.in.flight.requests.per.connection: 5   # how many sends can be waiting on a reply at once, per connection — 5 is the highest value that still keeps message order safe while idempotence is on
+        spring.json.add.type.headers: false   # don't tag each message with this service's own Java class name — order-service and notification-service each keep their own copy of that class, so the tag wouldn't match anyway(Event class name)
+        linger.ms: 5                 # wait up to 5ms for more messages to join the same batch before sending it
+        request.timeout.ms: 30000    # how long to wait for the broker to reply to a single send attempt
+        delivery.timeout.ms: 120000  # the real total time budget for one message — covers linger.ms plus every retry and pause in between; must be bigger than linger.ms + request.timeout.ms added together
+        max.block.ms: 10000          # how long the send() call itself is allowed to sit and wait (e.g. if Kafka can't be reached right now) before giving up and throwing an error
+        retry.backoff.ms: 500        # how long to pause between one retry attempt and the next
 
 server:
   port: 9102
