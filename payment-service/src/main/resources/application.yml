@@ -18,7 +18,7 @@ spring:
   kafka:
     producer:
       # spring.kafka.producer.* has its own YAML key only for these few —
-      # everything else Kafka supports goes under properties: below,
+      # everything else Kafka  supports goes under properties: below,
       # using Kafka's own dotted name.
       key-serializer: org.apache.kafka.common.serialization.StringSerializer   # turns the message key (orderId) into bytes to send over the network
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer   # turns the event object into JSON bytes to send over the network
