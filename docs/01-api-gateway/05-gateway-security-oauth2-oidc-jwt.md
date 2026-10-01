@@ -89,7 +89,8 @@ gateway, so they are same-origin from the browser's perspective. Keycloak allows
 the React origin for token exchange.
 
 The frontend implementation is in
-[App.jsx](../../ecom-ui/src/App.jsx), with authentication in
+[App.jsx](../../ecom-ui/src/App.jsx) and the role-module
+[AppRouter.jsx](../../ecom-ui/src/app/AppRouter.jsx), with authentication in
 [auth.js](../../ecom-ui/src/auth.js) and gateway calls in
 [api.js](../../ecom-ui/src/api.js). The
 [React project guide](../../ecom-ui/README.md) covers frontend startup and configuration.
@@ -114,6 +115,16 @@ headers. The gateway derives those from the verified token.
 
 The gateway protects the APIs. The React application's Keycloak adapter performs
 the authorization-code exchange directly with Keycloak.
+
+### Frontend module boundaries
+
+One portal contains separate customer and admin modules. Customers land on
+`/#/customer/dashboard`; admins land on `/#/admin/dashboard`. Each owns its
+pages and navigation. Shared login and controls are described in the
+[frontend architecture guide](../../ecom-ui/README.md#one-portal-separate-role-modules).
+As a customer, manually open `/#/admin/orders/new`: expect **Access restricted**.
+This frontend check complements the API authorization explained above; the backend
+still validates every request regardless of which page initiated it.
 
 ## 4. Validate the access token at the gateway
 
@@ -419,8 +430,8 @@ Click **Sign out** before switching accounts. Use the saved order ID in these te
 | User | Action | Expected result |
 | --- | --- | --- |
 | `customer2` | Open My orders | Customer1's order is absent |
-| `customer2` | Open `http://localhost:5173/#/orders/ORDER_ID` | Order unavailable; backend **403** |
-| `customer2` | Open `http://localhost:5173/#/customers` | Access restricted; no customer data displayed |
+| `customer2` | Open `http://localhost:5173/#/customer/orders/ORDER_ID` | Order unavailable; backend **403** |
+| `customer2` | Open `http://localhost:5173/#/admin/customers` | Access restricted; no customer data displayed |
 | `admin1` | Search All orders for customer1's order | Visible, with **200** on detail lookup |
 | `othercustomer` | List orders or open customer1's detail URL | Order absent from list; detail **403** |
 

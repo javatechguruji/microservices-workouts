@@ -59,7 +59,7 @@ and displays an access-denied screen. Hiding a button is not the security bounda
 1. Sign in as `customer1`. Create an order for `37.50`, save its ID, and find it in
    **My orders**. Open its details and try **Pay now**. This does not charge money.
 2. Sign out and sign in as `customer2`. The order is absent from **My orders**.
-   Open `http://localhost:5173/#/orders/ORDER_ID`: access must be denied.
+   Open `http://localhost:5173/#/customer/orders/ORDER_ID`: access must be denied.
 3. Sign in as `admin1`. **All orders** includes customer1's order. Use **Create
    order** to create another order for `customer1`; open it and update its status.
 4. Inspect **Customers** and the dashboard. The data reflects orders in tenant
@@ -73,19 +73,62 @@ The old API playground and raw JSON editor have been replaced by these screens.
 
 ## Implementation and configuration
 
-| File | Responsibility |
-| --- | --- |
-| `src/App.jsx` | Session loading, role-aware navigation and hash routes |
-| `src/pages/Dashboard.jsx` | Customer/admin metrics and recent orders |
-| `src/pages/OrderList.jsx` | Search, status filters and pagination |
-| `src/pages/CreateOrder.jsx` | Customer/admin order forms |
-| `src/pages/OrderDetails.jsx` | Detail lookup, payment receipt and admin status changes |
-| `src/pages/Customers.jsx` | Admin customer activity summary |
-| `src/components/OrdersTable.jsx` | Shared order table and status badges |
-| `src/orders.js` | API error handling and display formatting |
-| `src/auth.js` | Keycloak login, SSO restore and token refresh |
-| `src/api.js` | Bearer requests constrained to application API paths |
-| `vite.config.js` | Fixed frontend port and proxy to gateway 9100 |
+### One portal, separate role modules
+
+The public sign-in page is shared. After identity loading, a customer enters
+`/#/customer/dashboard` and an administrator enters `/#/admin/dashboard`.
+These are independent page components, not one dashboard with an `admin` flag.
+Each module owns its routes, layout configuration, navigation and pages, and is
+loaded as a separate JavaScript bundle when authorized.
+
+```text
+src/
+  App.jsx                       # Compose session and router
+  app/                          # Route normalization, role guards, lazy modules
+  modules/
+    customer/
+      CustomerModule.jsx
+      CustomerLayout.jsx
+      pages/                    # Dashboard, My orders, Create order, Details
+    admin/
+      AdminModule.jsx
+      AdminLayout.jsx
+      pages/                    # Dashboard, All orders, Create order, Details, Customers
+      components/               # Admin-only order status editor
+  shared/
+    auth/                       # Session provider and public sign-in page
+    layout/                     # Visual shell and denied/not-found states
+    orders/                     # Order data, reusable form/table/detail/payment controls
+  auth.js                       # Keycloak adapter, SSO restore, token refresh
+  api.js                        # Bearer requests to gateway API paths
+  orders.js                     # API errors and display formatting
+```
+
+| Page | Customer route | Admin route |
+| --- | --- | --- |
+| Dashboard | `/customer/dashboard` | `/admin/dashboard` |
+| Orders | `/customer/orders` | `/admin/orders` |
+| Create order | `/customer/orders/new` | `/admin/orders/new` |
+| Order details | `/customer/orders/:id` | `/admin/orders/:id` |
+| Customer activity | — | `/admin/customers` |
+
+Routes follow `http://localhost:5173/#`. Shared controls handle common rendering
+and behavior; module pages decide which controls to compose. For example, the
+customer create page fixes the owner to the caller, while the admin create page
+owns customer selection. Only the admin details page includes the status editor.
+
+The router checks the identity returned by the gateway before mounting a module.
+A customer entering an admin URL sees **Access restricted**. A user with neither
+supported role is denied. A user with both roles defaults to admin and can enter
+both modules; an admin-only user does not implicitly receive the customer role.
+Old `/orders/...` links redirect into the caller's default module; old `/customers`
+links redirect to the guarded admin module. Frontend guards organize the experience;
+backend role, permission, ownership and tenant checks remain authoritative.
+
+To add a future role module, give it its own module, layout and pages, register its
+lazy entry point and guard in `app/`, then add route tests. Keep role-specific
+business decisions inside the module and extract only genuinely shared controls.
+The portal remains a single application and deployment, with one Keycloak client.
 
 Keycloak's public client remains `security-demo-ui`, with callback/logout URL
 `http://localhost:5173/`. It is a client identifier, not the application name.
@@ -119,7 +162,7 @@ npm run test:e2e
 
 Browser tests require gateway, order and payment services plus their shared
 infrastructure. They cover customer creation/payment, reload/SSO, token refresh,
-list/detail access, admin creation for a customer, status updates, cross-user and
+module routing and unauthorized module denial, legacy links, list/detail access, admin creation for a customer, status updates, cross-user and
 cross-tenant denial, logout and mobile layout. Tests use the realm seed's learning
 passwords and create persistent records. Traces are disabled. Screenshots are saved
 under ignored `test-results/` for visual review.

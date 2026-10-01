@@ -281,3 +281,12 @@ passed 25 API checks, including JWT rejection, header replacement, ownership,
 tenant isolation, permission denials, and both machine-token hops. It created
 learning records. Temporary application processes were stopped afterward;
 start the services in IntelliJ to use the browser page.
+
+## Role modules in the single frontend portal
+
+Customer pages live under `/#/customer/`; administrator pages live under
+`/#/admin/`. Their dashboards, order pages and navigation belong to separate
+modules. Login, API access and reusable controls are shared. The router denies
+unauthorized modules before mounting their pages; downstream API checks remain
+the authority for permissions, ownership and tenant isolation. See the
+[frontend module guide](../../ecom-ui/README.md#one-portal-separate-role-modules).

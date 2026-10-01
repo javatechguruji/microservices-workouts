@@ -10,7 +10,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test src/api.test.js",
+    "test": "node --test src/api.test.js src/app/routing.test.js",
     "test:e2e": "playwright test",
     "format": "prettier --write src tests *.js *.json index.html"
   },

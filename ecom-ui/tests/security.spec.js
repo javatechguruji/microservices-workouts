@@ -16,6 +16,9 @@ async function login(page, username) {
       exact: true,
     })
   ).toBeVisible();
+  await expect(page).toHaveURL(
+    new RegExp(username === 'admin1' ? '#/admin/dashboard$' : '#/customer/dashboard$')
+  );
 }
 async function create(page, amount, customer) {
   await page.getByRole('navigation').getByRole('link', { name: 'Create order' }).click();
@@ -38,6 +41,10 @@ test('customer and administrator order workflows enforce owner and tenant bounda
   page,
   browser,
 }, testInfo) => {
+  const customerModuleRequests = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/src/modules/')) customerModuleRequests.push(request.url());
+  });
   await login(page, 'customer1');
   await expect(
     page.getByRole('navigation').getByRole('link', { name: 'Customers', exact: true })
@@ -84,11 +91,13 @@ test('customer and administrator order workflows enforce owner and tenant bounda
           other.getByRole('link', { name: `View order ${own.id}`, exact: true })
         ).toHaveCount(0);
         console.log('Checking denied detail:', username);
-        await other.goto(`/#/orders/${own.id}`);
+        await other.goto(`/#/customer/orders/${own.id}`);
         await expect(other.getByRole('heading', { name: 'Order unavailable' })).toBeVisible();
         await expect(other.getByRole('alert')).toContainText('do not have access');
         console.log('Checking admin navigation:', username);
-        await other.goto('/#/customers');
+        await other.goto('/#/admin/customers');
+        await expect(other.getByRole('heading', { name: 'Access restricted' })).toBeVisible();
+        await other.goto('/#/admin/orders/new');
         await expect(other.getByRole('heading', { name: 'Access restricted' })).toBeVisible();
       } else {
         await other.getByRole('navigation').getByRole('link', { name: 'All orders' }).click();
@@ -126,11 +135,18 @@ test('customer and administrator order workflows enforce owner and tenant bounda
       console.log('Closed:', username);
     }
   }
-  await page.goto(`/#/orders/${createdForCustomer.id}`);
+  await page.goto(`/#/customer/orders/${createdForCustomer.id}`);
   await expect(
     page.getByRole('heading', { name: `Order #${createdForCustomer.id}` })
   ).toBeVisible();
   await expect(page.locator('.detail-list .badge')).toHaveText('Failed');
+  expect(customerModuleRequests.some((url) => url.includes('/modules/customer/'))).toBe(true);
+  expect(customerModuleRequests.some((url) => url.includes('/modules/admin/'))).toBe(false);
+  await page.goto(`/#/orders/${createdForCustomer.id}`);
+  await expect(page).toHaveURL(new RegExp(`#/customer/orders/${createdForCustomer.id}$`));
+  await expect(
+    page.getByRole('heading', { name: `Order #${createdForCustomer.id}` })
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Sign in to your account' })).toBeVisible();
 });
