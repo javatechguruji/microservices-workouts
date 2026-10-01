@@ -4,3 +4,6 @@
 -- to be created explicitly here.
 CREATE DATABASE "order-srv-db";
 CREATE DATABASE "payment-srv-db";
+
+-- Keycloak stores realms, clients and service accounts in the shared Postgres.
+CREATE DATABASE "keycloak";

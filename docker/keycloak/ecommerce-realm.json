@@ -1,0 +1,537 @@
+{
+  "realm": "ecommerce",
+  "enabled": true,
+  "displayName": "Ecommerce Learning",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "clients": [
+    {
+      "clientId": "gateway-service",
+      "name": "gateway-service",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "VgfMPYo8VgzFhv5W8TwGakdmMuzeo93x4zWg5dirO-Q",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "fullScopeAllowed": true,
+      "protocolMappers": [
+        {
+          "name": "gateway-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "gateway-service",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "tenant",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "tenant",
+            "claim.name": "tenant",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "order-service",
+      "name": "order-service",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "LBOkQHGD24s1Wg7L7Bl4iul03PWxgZ0p7oNR-LMmIQ4",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "fullScopeAllowed": true,
+      "protocolMappers": [
+        {
+          "name": "gateway-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "gateway-service",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "tenant",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "tenant",
+            "claim.name": "tenant",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "payment-service",
+      "name": "payment-service",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "DN_T6e4herop-EqSOWtVB85PNY1UEddm9MofHQzP_r0",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "fullScopeAllowed": true,
+      "protocolMappers": [
+        {
+          "name": "gateway-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "gateway-service",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "tenant",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "tenant",
+            "claim.name": "tenant",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "notification-service",
+      "name": "notification-service",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "KwwxLsvQEF52XsTegnwdQR6FDn0hsN6ofINTRa_0qfw",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "fullScopeAllowed": true,
+      "protocolMappers": [
+        {
+          "name": "gateway-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "gateway-service",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "tenant",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "tenant",
+            "claim.name": "tenant",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "product-service",
+      "name": "product-service",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "ZRaZxGAPOI1QpmUUpcQpTmbwFWgJ91C71ckGAFNVl0M",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "fullScopeAllowed": true,
+      "protocolMappers": [
+        {
+          "name": "gateway-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "gateway-service",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "tenant",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "tenant",
+            "claim.name": "tenant",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "inventory-service",
+      "name": "inventory-service",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "HCtS7tvEExUtwxHHDdzP9ry_2x1IE7ofrx4SyzTQBWM",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "fullScopeAllowed": true,
+      "protocolMappers": [
+        {
+          "name": "gateway-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "gateway-service",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "tenant",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "tenant",
+            "claim.name": "tenant",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "security-demo-ui",
+      "name": "PKCE browser learning client",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": true,
+      "redirectUris": [
+        "http://localhost:5173/"
+      ],
+      "webOrigins": [
+        "http://localhost:5173"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/"
+      },
+      "protocolMappers": [
+        {
+          "name": "gateway-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "gateway-service",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "tenant",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "tenant",
+            "claim.name": "tenant",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "roles": {
+    "realm": [
+      {
+        "name": "orders:create"
+      },
+      {
+        "name": "orders:read"
+      },
+      {
+        "name": "orders:read:any"
+      },
+      {
+        "name": "orders:update"
+      },
+      {
+        "name": "payments:create"
+      },
+      {
+        "name": "payments:read"
+      },
+      {
+        "name": "payments:read:any"
+      },
+      {
+        "name": "products:read"
+      },
+      {
+        "name": "products:write"
+      },
+      {
+        "name": "inventory:read"
+      },
+      {
+        "name": "inventory:write"
+      },
+      {
+        "name": "notifications:send"
+      },
+      {
+        "name": "customer",
+        "composite": true,
+        "composites": {
+          "realm": [
+            "orders:create",
+            "orders:read",
+            "payments:create",
+            "payments:read",
+            "products:read"
+          ]
+        }
+      },
+      {
+        "name": "admin",
+        "composite": true,
+        "composites": {
+          "realm": [
+            "orders:create",
+            "orders:read",
+            "orders:read:any",
+            "orders:update",
+            "payments:create",
+            "payments:read",
+            "payments:read:any",
+            "products:read",
+            "products:write",
+            "inventory:read",
+            "inventory:write",
+            "notifications:send"
+          ]
+        }
+      },
+      {
+        "name": "service"
+      }
+    ]
+  },
+  "users": [
+    {
+      "username": "service-account-gateway-service",
+      "enabled": true,
+      "serviceAccountClientId": "gateway-service",
+      "attributes": {
+        "tenant": [
+          "demo"
+        ]
+      },
+      "realmRoles": [
+        "service",
+        "products:read"
+      ]
+    },
+    {
+      "username": "service-account-order-service",
+      "enabled": true,
+      "serviceAccountClientId": "order-service",
+      "attributes": {
+        "tenant": [
+          "demo"
+        ]
+      },
+      "realmRoles": [
+        "service",
+        "inventory:read",
+        "products:read"
+      ]
+    },
+    {
+      "username": "service-account-payment-service",
+      "enabled": true,
+      "serviceAccountClientId": "payment-service",
+      "attributes": {
+        "tenant": [
+          "demo"
+        ]
+      },
+      "realmRoles": [
+        "service",
+        "orders:read:any"
+      ]
+    },
+    {
+      "username": "service-account-notification-service",
+      "enabled": true,
+      "serviceAccountClientId": "notification-service",
+      "attributes": {
+        "tenant": [
+          "demo"
+        ]
+      },
+      "realmRoles": [
+        "service",
+        "orders:read:any"
+      ]
+    },
+    {
+      "username": "service-account-product-service",
+      "enabled": true,
+      "serviceAccountClientId": "product-service",
+      "attributes": {
+        "tenant": [
+          "demo"
+        ]
+      },
+      "realmRoles": [
+        "service",
+        "inventory:read"
+      ]
+    },
+    {
+      "username": "service-account-inventory-service",
+      "enabled": true,
+      "serviceAccountClientId": "inventory-service",
+      "attributes": {
+        "tenant": [
+          "demo"
+        ]
+      },
+      "realmRoles": [
+        "service",
+        "products:read"
+      ]
+    },
+    {
+      "username": "customer1",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "customer1",
+      "lastName": "Demo",
+      "email": "customer1@example.test",
+      "attributes": {
+        "tenant": [
+          "demo"
+        ]
+      },
+      "realmRoles": [
+        "customer"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Workouts-customer1-2026!",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "customer2",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "customer2",
+      "lastName": "Demo",
+      "email": "customer2@example.test",
+      "attributes": {
+        "tenant": [
+          "demo"
+        ]
+      },
+      "realmRoles": [
+        "customer"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Workouts-customer2-2026!",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "admin1",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "admin1",
+      "lastName": "Demo",
+      "email": "admin1@example.test",
+      "attributes": {
+        "tenant": [
+          "demo"
+        ]
+      },
+      "realmRoles": [
+        "admin"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Workouts-admin1-2026!",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "othercustomer",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "othercustomer",
+      "lastName": "Demo",
+      "email": "othercustomer@example.test",
+      "attributes": {
+        "tenant": [
+          "other"
+        ]
+      },
+      "realmRoles": [
+        "customer"
+      ],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Workouts-othercustomer-2026!",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

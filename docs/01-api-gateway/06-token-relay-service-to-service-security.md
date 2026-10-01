@@ -1,3 +1,5 @@
+> Historical conceptual notes: the implemented POC uses **client credentials via the gateway**, not user-token relay. See [current gateway flow](05-gateway-security-oauth2-oidc-jwt.md) and [microservice security](../security/Authentication%20and%20Authorization%20at%20Microservice.md) for the active implementation.
+
 # API Gateway --- Stage 6: Token Relay & Service-to-Service Security
 
 > **Previous:** `05-oauth2-oidc-jwt-gateway-security.md`\

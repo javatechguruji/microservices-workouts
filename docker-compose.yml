@@ -1,6 +1,57 @@
+# Infrastructure only: shared by IntelliJ and Minikube applications.
+# Microservices run locally now; Jenkins will deploy their k8s manifests later.
 name: shared-infra
 
 services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.4
+    container_name: keycloak
+    restart: unless-stopped
+    command: ["start-dev", "--import-realm"]
+    depends_on:
+      - postgres
+    ports:
+      - "8180:8080"
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: "WorkoutsKeycloak-Admin-2026!"
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: postgres
+      KC_DB_PASSWORD: postgres
+      # One issuer identity, even when a Pod uses the host-access token URL.
+      KC_HOSTNAME: http://localhost:8180
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      - ./docker/keycloak/ecommerce-realm.json:/opt/keycloak/data/import/ecommerce-realm.json:ro
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000; printf 'GET /health/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3; grep -q '200 OK' <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 60s
+
+  redis:
+    image: redis:8-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      # Shared by IntelliJ (localhost) and Minikube (host.minikube.internal).
+      - "6379:6379"
+    # Development credential; also used by redis-cli and the health check.
+    environment:
+      REDISCLI_AUTH: "WorkoutsRedis-LocalStage-2026!"
+    command: ["sh", "-c", 'exec redis-server --appendonly yes --appendfsync everysec --requirepass "$$REDISCLI_AUTH"']
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -qx PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
   postgres:
     image: postgres:16
     container_name: postgres
@@ -12,7 +63,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./infra/postgres/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
+      - ./docker/postgres/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
 
   # MongoDB for product-service goes here later.
 
@@ -68,6 +119,8 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
 
 volumes:
+  redis-data:
+    name: workouts-redis-data
   postgres-data:
     name: workouts-postgres-data
     external: true

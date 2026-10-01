@@ -1,0 +1,5 @@
+# IntelliJ: retain the file-based H2 database configured in application.yml.
+spring:
+  h2:
+    console:
+      enabled: true

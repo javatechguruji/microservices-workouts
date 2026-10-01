@@ -12,6 +12,12 @@ spring:
 # order-service calls product-service and inventory-service directly by
 # hostname:port here; in Kubernetes these become the Service DNS names
 # instead of hardcoded localhost URLs (see application-k8s.yml).
+# HTTP service calls always return through the gateway.
 services:
-  product-service-url: http://localhost:9104
-  inventory-service-url: http://localhost:9105
+  gateway-url: http://localhost:9100
+
+security:
+  client:
+    id: order-service
+    secret: ${KEYCLOAK_CLIENT_SECRET:LBOkQHGD24s1Wg7L7Bl4iul03PWxgZ0p7oNR-LMmIQ4}
+    token-uri: http://localhost:8180/realms/ecommerce/protocol/openid-connect/token

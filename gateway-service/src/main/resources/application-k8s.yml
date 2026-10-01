@@ -1,6 +1,15 @@
-# Active inside the cluster via SPRING_PROFILES_ACTIVE=k8s (see
-# k8s/gateway-service.yaml). order-service is reached through its stable
-# ClusterIP Service DNS name instead of localhost.
 services:
   order:
     url: http://order-service:9101
+  payment:
+    url: http://payment-service:9102
+  notification:
+    url: http://notification-service:9103
+  product:
+    url: http://product-service:9104
+  inventory:
+    url: http://inventory-service:9105
+
+security:
+  jwt:
+    jwk-set-uri: http://host.minikube.internal:8180/realms/ecommerce/protocol/openid-connect/certs

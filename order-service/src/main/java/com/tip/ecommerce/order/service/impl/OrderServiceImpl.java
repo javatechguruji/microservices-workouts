@@ -23,9 +23,18 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public OrderDto createOrder(CreateOrderRequest request) {
+    public OrderDto createOrder(CreateOrderRequest request, String tenant) {
+        if (request.customerId() == null || !request.customerId().matches("[a-zA-Z0-9@._:-]{1,200}")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A valid customer username is required");
+        }
+        if (request.amount() == null || request.amount().signum() <= 0
+                || request.amount().compareTo(new java.math.BigDecimal("99999999.99")) > 0
+                || request.amount().stripTrailingZeros().scale() > 2) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Amount must be positive with at most two decimal places");
+        }
         Order order = new Order();
         order.setCustomerId(request.customerId());
+        order.setTenant(tenant);
         order.setAmount(request.amount());
         order.setStatus(OrderStatus.PENDING);
         order.setCreatedAt(Instant.now());
@@ -47,6 +56,7 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public OrderDto updateStatus(Long id, OrderStatus status) {
+        if (status == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Status is required");
         Order order = findOrThrow(id);
         order.setStatus(status);
         return toDto(orderRepository.save(order));
@@ -58,6 +68,6 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private OrderDto toDto(Order order) {
-        return new OrderDto(order.getId(), order.getCustomerId(), order.getAmount(), order.getStatus(), order.getCreatedAt());
+        return new OrderDto(order.getId(), order.getCustomerId(), order.getAmount(), order.getStatus(), order.getCreatedAt(), order.getTenant());
     }
 }

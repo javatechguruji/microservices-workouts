@@ -33,13 +33,22 @@ public class PaymentControllerTest {
     @MockitoBean
     private PaymentService paymentService;
 
+    @MockitoBean
+    private com.tip.ecommerce.payment.client.OrderServiceClient orders;
+
     @Test
     void createPayment_returns201WithBody_onSuccess() throws Exception {
         CreatePaymentRequest request = new CreatePaymentRequest(1L, BigDecimal.TEN);
         PaymentDto response = new PaymentDto(100L, 1L, BigDecimal.TEN, PaymentStatus.SUCCESS, Instant.now());
+        when(orders.getOrder(1L)).thenReturn(new com.tip.ecommerce.payment.dto.OrderView(1L,"PENDING","customer1","demo"));
         when(paymentService.processPayment(any(CreatePaymentRequest.class))).thenReturn(response);
 
         mockMvc.perform(post("/payments")
+                        .header("X-Auth-Subject","customer1-id")
+                        .header("X-Auth-Username","customer1")
+                        .header("X-Auth-Tenant","demo")
+                        .header("X-Auth-Roles","customer")
+                        .header("X-Auth-Permissions","payments:create")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())

@@ -8,7 +8,7 @@ import java.util.List;
 
 public interface OrderService {
 
-    OrderDto createOrder(CreateOrderRequest request);
+    OrderDto createOrder(CreateOrderRequest request, String tenant);
 
     OrderDto getOrder(Long id);
 

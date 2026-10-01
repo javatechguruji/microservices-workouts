@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory-service
+  namespace: ecommerce
+spec:
+  # H2 is private to this Pod; do not scale until external storage is configured.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: inventory-service
+  template:
+    metadata:
+      labels:
+        app: inventory-service
+    spec:
+      containers:
+        - name: inventory-service
+          image: inventory-service:stage1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9105
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: k8s
+          volumeMounts:
+            - name: app-data
+              mountPath: /app/data
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 9105
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 9105
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 9105
+            initialDelaySeconds: 20
+            periodSeconds: 10
+      volumes:
+        - name: app-data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-service
+  namespace: ecommerce
+spec:
+  type: ClusterIP
+  selector:
+    app: inventory-service
+  ports:
+    - name: http
+      port: 9105
+      targetPort: 9105

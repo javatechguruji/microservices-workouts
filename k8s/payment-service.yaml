@@ -20,6 +20,11 @@ spec:
           ports:
             - containerPort: 9102
           env:
+            - name: KEYCLOAK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: service-client-credentials
+                  key: payment-service
             - name: SPRING_PROFILES_ACTIVE
               value: k8s
           readinessProbe:

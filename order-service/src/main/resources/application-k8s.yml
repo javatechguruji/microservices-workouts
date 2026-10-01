@@ -11,6 +11,12 @@ spring:
     # Kafka's PLAINTEXT_K8S listener (port 9094) — see docker-compose.yml.
     bootstrap-servers: host.minikube.internal:9094
 
+# HTTP service calls always return through the gateway.
 services:
-  product-service-url: http://product-service:9104
-  inventory-service-url: http://inventory-service:9105
+  gateway-url: http://gateway-service:9100
+
+security:
+  client:
+    id: order-service
+    secret: ${KEYCLOAK_CLIENT_SECRET:}
+    token-uri: http://host.minikube.internal:8180/realms/ecommerce/protocol/openid-connect/token

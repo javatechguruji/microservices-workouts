@@ -9,5 +9,12 @@ spring:
   kafka:
     bootstrap-servers: localhost:9092
 
+# HTTP service calls always return through the gateway.
 services:
-  order-service-url: http://localhost:9101
+  gateway-url: http://localhost:9100
+
+security:
+  client:
+    id: payment-service
+    secret: ${KEYCLOAK_CLIENT_SECRET:DN_T6e4herop-EqSOWtVB85PNY1UEddm9MofHQzP_r0}
+    token-uri: http://localhost:8180/realms/ecommerce/protocol/openid-connect/token

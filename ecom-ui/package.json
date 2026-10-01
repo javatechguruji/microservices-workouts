@@ -1,0 +1,28 @@
+{
+  "name": "ecom-ui",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test src/api.test.js",
+    "test:e2e": "playwright test",
+    "format": "prettier --write src tests *.js *.json index.html"
+  },
+  "dependencies": {
+    "keycloak-js": "26.2.4",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "prettier": "3.9.9",
+    "vite": "8.3.1"
+  }
+}

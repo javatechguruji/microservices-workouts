@@ -1,5 +1,15 @@
-# Active when running directly on the Mac (IntelliJ, mvn spring-boot:run).
-# order-service is reached on the port it binds to on localhost.
 services:
   order:
     url: http://localhost:9101
+  payment:
+    url: http://localhost:9102
+  notification:
+    url: http://localhost:9103
+  product:
+    url: http://localhost:9104
+  inventory:
+    url: http://localhost:9105
+
+security:
+  jwt:
+    jwk-set-uri: http://localhost:8180/realms/ecommerce/protocol/openid-connect/certs

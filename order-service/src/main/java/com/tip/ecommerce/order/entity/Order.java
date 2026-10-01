@@ -31,6 +31,8 @@ public class Order {
 
     private String customerId;
 
+    private String tenant;
+
     private BigDecimal amount;
 
     @Enumerated(EnumType.STRING)

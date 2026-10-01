@@ -12,5 +12,12 @@ spring:
     # port Mac-local processes use — see docker-compose.yml.
     bootstrap-servers: host.minikube.internal:9094
 
+# HTTP service calls always return through the gateway.
 services:
-  order-service-url: http://order-service:9101
+  gateway-url: http://gateway-service:9100
+
+security:
+  client:
+    id: payment-service
+    secret: ${KEYCLOAK_CLIENT_SECRET:}
+    token-uri: http://host.minikube.internal:8180/realms/ecommerce/protocol/openid-connect/token

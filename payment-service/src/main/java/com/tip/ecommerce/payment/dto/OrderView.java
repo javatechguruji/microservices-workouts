@@ -1,10 +1,4 @@
 package com.tip.ecommerce.payment.dto;
-
-// Minimal shape of what order-service's GET /api/orders/{id} returns —
-// only the fields payment-service actually needs. Spring's default Jackson
-// config ignores the extra fields order-service sends back.
-public record OrderView(
-        Long id,
-        String status
-) {
+public record OrderView(Long id, String status, String customerId, String tenant) {
+    public OrderView(Long id, String status) { this(id,status,null,null); }
 }

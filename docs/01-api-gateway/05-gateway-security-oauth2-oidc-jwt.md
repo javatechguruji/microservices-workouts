@@ -1,2529 +1,512 @@
-# API Gateway --- Stage 5: Gateway Security --- OAuth2, OIDC & JWT
-
-> **Previous:**
-> `04-load-balancing-scaling-high-availability-revised-v2.md`\
-> **Next:** `06-token-relay-service-to-service-security.md`\
-> **Runtime:** Kubernetes / Minikube\
-> **Identity Provider:** Keycloak\
-> **Gateway:** Spring Cloud Gateway WebFlux\
-> **Goal:** Secure external API access without making the Gateway the
-> only security boundary.
-
-------------------------------------------------------------------------
-
-# 1. What Problem Are We Solving?
-
-So far the architecture can route and scale traffic:
-
-``` text
-Client
-  |
-Gateway
-  |
-Kubernetes Service
-  |
-Order Pods
-```
-
-But without security, anybody who can reach an API could potentially
-call:
-
-``` text
-GET    /api/orders
-POST   /api/orders
-DELETE /api/orders/100
-```
-
-Stage 5 adds identity:
-
-``` text
-Who is the caller?
-Is the token genuine?
-Has it expired?
-Was it issued by our trusted Identity Provider?
-What is the caller allowed to do?
-Should Order Service verify the request again?
-```
-
-Target architecture:
-
-``` text
-                   Keycloak / IdP
-                        |
-                 authenticate user
-                        |
-                        v
-Client ------------- Access JWT
-                        |
-                        v
-                 API Gateway
-                 validate JWT
-                 coarse authorization
-                        |
-                        v
-                  Order Service
-                  validate JWT
-                  domain authorization
-```
-
-------------------------------------------------------------------------
-
-# 2. Authentication vs Authorization
-
-These are related but different.
-
-## Authentication
-
-``` text
-Who are you?
-```
-
-Example:
-
-``` text
-JWT subject = customer1
-```
-
-## Authorization
-
-``` text
-What are you allowed to do?
-```
-
-Example:
-
-``` text
-CUSTOMER → read/create own orders
-ADMIN    → delete any order
-```
-
-A valid JWT proves authentication only after successful validation.
-
-It does **not** mean the caller is allowed to perform every operation.
-
-------------------------------------------------------------------------
-
-# 3. OAuth2, OIDC and JWT --- Keep Them Separate
-
-These terms are often mixed together in interviews.
-
-## OAuth 2.x
-
-OAuth is primarily an **authorization framework**.
-
-It defines how a client obtains an access token and uses it to access a
-protected resource.
-
-Conceptually:
-
-``` text
-Client
-  |
-  | obtain authorization
-  v
-Authorization Server
-  |
-Access Token
-  v
-Client
-  |
-Access Token
-  v
-Resource Server
-```
-
-## OpenID Connect --- OIDC
-
-OIDC adds an **identity/authentication layer** on top of OAuth.
-
-It answers questions such as:
-
-``` text
-Who logged in?
-```
-
-and introduces concepts such as:
-
-``` text
-ID Token
-UserInfo
-OIDC discovery
-```
-
-## JWT
-
-JWT is a **token format**.
-
-A JWT commonly looks like:
-
-``` text
-xxxxx.yyyyy.zzzzz
-```
-
-Those sections represent:
-
-``` text
-Header.Payload.Signature
-```
-
-OAuth is not JWT.
-
-OIDC is not JWT.
-
-OAuth access tokens can be JWTs, but they do not have to be.
-
-------------------------------------------------------------------------
-
-# 4. Main Actors in Our Architecture
-
-``` text
-Customer UI
-    |
-    v
-Keycloak
-    |
-    | issues token
-    v
-Customer UI
-    |
-    | Bearer JWT
-    v
-Gateway
-    |
-    v
-Order Service
-```
-
-Roles:
-
-``` text
-Keycloak
-= Identity Provider / Authorization Server
-
-Gateway
-= Resource Server
-
-Order Service
-= Resource Server
-
-Customer UI
-= OAuth/OIDC Client
-```
-
-A **Resource Server** is an API that accepts an access token and
-validates it before serving protected resources.
-
-------------------------------------------------------------------------
-
-# 5. Access Token vs ID Token
-
-This distinction matters.
-
-## ID Token
-
-Primarily tells the client application about the authenticated user.
-
-``` text
-ID Token
-→ intended for the OIDC client
-```
-
-## Access Token
-
-Used to access protected APIs.
-
-``` text
-Access Token
-→ Gateway / API
-```
-
-For:
-
-``` http
-Authorization: Bearer ...
-```
-
-we want the **access token**, not the ID token.
-
-Interview answer:
-
-> ID Token is primarily authentication information for the OIDC client.
-> Access Token is the credential presented to a protected resource/API.
-
-------------------------------------------------------------------------
-
-# 6. JWT Structure
-
-Example conceptual JWT:
-
-``` text
-eyJhbGciOiJSUzI1Ni...
-.
-eyJzdWIiOiJjdXN0b21lcjEi...
-.
-signature...
-```
-
-Decoded conceptually:
-
-``` json
-{
-  "alg": "RS256",
-  "kid": "key-123"
-}
-```
-
-Payload:
-
-``` json
-{
-  "iss": "http://keycloak/realms/ecom-realm",
-  "sub": "user-123",
-  "exp": 1788000000,
-  "iat": 1787999000,
-  "scope": "openid profile",
-  "realm_access": {
-    "roles": [
-      "CUSTOMER"
-    ]
-  }
-}
-```
-
-The payload is **encoded, not encrypted**.
-
-Never place secrets in JWT claims.
-
-------------------------------------------------------------------------
-
-# 7. Why the JWT Signature Matters
-
-Suppose an attacker changes:
-
-``` json
-"roles": ["CUSTOMER"]
-```
-
-to:
-
-``` json
-"roles": ["ADMIN"]
-```
-
-The payload can physically be modified.
-
-But the attacker cannot produce a valid signature without the issuer's
-private signing key.
-
-Gateway verifies the signature using the trusted public key.
-
-Result:
-
-``` text
-modified payload
-      +
-old signature
-      ↓
-signature verification fails
-      ↓
-401
-```
-
-That is why decoding a JWT is not the same as validating it.
-
-------------------------------------------------------------------------
-
-# 8. Public-Key Validation
-
-Typical asymmetric model:
-
-``` text
-Keycloak
-   |
-Private Key
-   |
-signs JWT
-   v
-Access Token
-```
-
-Gateway:
-
-``` text
-Access Token
-   |
-Public Key
-   |
-verify signature
-```
-
-Keycloak keeps the private key.
-
-Resource servers obtain public signing keys through the issuer/JWK
-metadata.
-
-This means Gateway does not need Keycloak's private signing key.
-
-------------------------------------------------------------------------
-
-# 9. What Is JWK / JWKS?
-
-JWK:
-
-``` text
-JSON Web Key
-```
-
-JWKS:
-
-``` text
-JSON Web Key Set
-```
-
-Keycloak exposes public keys that resource servers can use to validate
-JWT signatures.
-
-Conceptual flow:
-
-``` text
-Gateway
-   |
-issuer metadata
-   v
-Keycloak OIDC discovery
-   |
-jwks_uri
-   v
-public signing keys
-```
-
-The JWT header contains a key identifier:
-
-``` json
-{
-  "kid": "abc123"
-}
-```
-
-The resource server finds the corresponding public key and verifies the
-signature.
-
-------------------------------------------------------------------------
-
-# 10. OIDC Discovery
-
-Keycloak exposes a discovery endpoint:
-
-``` text
-/realms/{realm}/.well-known/openid-configuration
-```
-
-For our realm:
-
-``` text
-/realms/ecom-realm/.well-known/openid-configuration
-```
-
-It describes important endpoints such as:
-
-``` text
-authorization endpoint
-token endpoint
-userinfo endpoint
-JWKS/certificate endpoint
-```
-
-This is why Spring can often be configured using only an `issuer-uri`.
-
-------------------------------------------------------------------------
-
-# 11. Important JWT Claims
-
-## `iss` --- Issuer
-
-``` text
-Who issued this token?
-```
-
-Example:
-
-``` text
-https://id.example.com/realms/ecom-realm
-```
-
-Gateway should trust only the expected issuer.
-
-## `sub` --- Subject
-
-Usually identifies the authenticated principal.
-
-``` text
-user-123
-```
-
-## `exp` --- Expiration
-
-Token must not be accepted indefinitely.
-
-## `nbf` --- Not Before
-
-Token should not be accepted before this time.
-
-## `aud` --- Audience
-
-``` text
-Who is this token intended for?
-```
-
-Production APIs should consider audience validation so a token intended
-for another resource is not accepted simply because it has the same
-trusted issuer.
-
-## Roles / Scopes
-
-Used for authorization.
-
-------------------------------------------------------------------------
-
-# 12. What Spring Security Validates
-
-With JWT Resource Server configuration, Spring Security can validate:
-
-``` text
-signature
-issuer
-expiration
-not-before
-```
-
-and map scopes to Spring authorities.
-
-Audience validation can also be configured when required.
-
-The exact validation policy is part of our security architecture---not
-something we should leave implicit.
-
-------------------------------------------------------------------------
-
-# 13. 401 vs 403
-
-This is a common interview question.
-
-## 401 Unauthorized
-
-Authentication failed or is missing.
-
-Examples:
-
-``` text
-no token
-invalid token
-expired token
-bad signature
-wrong trusted issuer
-```
-
-Think:
-
-``` text
-"I cannot establish a valid authenticated caller."
-```
-
-## 403 Forbidden
-
-Authentication succeeded, but authorization failed.
-
-Example:
-
-``` text
-valid CUSTOMER token
-        |
-DELETE /api/orders/100
-        |
-requires ADMIN
-        ↓
-403
-```
-
-Think:
-
-``` text
-"I know who you are, but you cannot do this."
-```
-
-------------------------------------------------------------------------
-
-# 14. Roles vs Scopes
-
-A practical mental model:
-
-``` text
-Role
-→ what kind of actor / business authority?
-
-Scope
-→ what API permission was granted?
-```
-
-Examples:
-
-``` text
-Role:
-CUSTOMER
-ADMIN
-
-Scope:
-orders.read
-orders.write
-```
-
-Spring Security commonly converts OAuth scopes to authorities such as:
-
-``` text
-SCOPE_orders.read
-```
-
-Keycloak realm roles may require a custom JWT authority converter
-because they can appear inside:
-
-``` json
-realm_access.roles
-```
-
-------------------------------------------------------------------------
-
-# 15. Our Roles
-
-For this workout:
-
-``` text
-CUSTOMER
-ADMIN
-SYSTEM_ORDER
-```
-
-Meaning:
-
-``` text
-CUSTOMER
-→ normal customer operations
-
-ADMIN
-→ privileged administrative operations
-
-SYSTEM_ORDER
-→ machine/service role used in later service-to-service security
-```
-
-Stage 6 will go deeper into service identity.
-
-------------------------------------------------------------------------
-
-# 16. Gateway Authorization vs Service Authorization
-
-Gateway can perform **coarse-grained authorization**.
-
-Example:
-
-``` text
-/api/admin/**
-→ ADMIN only
-```
-
-But Gateway should not own domain rules such as:
-
-``` text
-Does customer 101 own order 500?
-Can this order be cancelled in its current state?
-Is this refund allowed?
-```
-
-Those belong to the responsible domain service.
-
-Good separation:
-
-``` text
-Gateway
-→ broad edge policy
-
-Order Service
-→ business/domain authorization
-```
-
-------------------------------------------------------------------------
-
-# 17. Why Validate JWT Again in Order Service?
-
-A tempting design:
-
-``` text
-Gateway validates token
-       |
-       v
-Order Service trusts everything
-```
-
-Problem:
-
-``` text
-What if Order becomes reachable through another path?
-What if internal traffic bypasses Gateway?
-What if another compromised workload calls Order?
-What if future architecture changes the entry path?
-```
-
-Safer model:
-
-``` text
-Gateway validates
-       |
-       v
-Order validates again
-```
-
-This is defense in depth and aligns with Zero Trust thinking.
-
-------------------------------------------------------------------------
-
-# 18. Zero Trust in Simple English
-
-Old assumption:
-
-``` text
-inside our network = trusted
-```
-
-Zero Trust principle:
-
-``` text
-network location alone does not establish trust
-```
-
-So Order asks:
-
-``` text
-Is this token genuine?
-Who is the caller?
-Does the caller have permission?
-```
-
-even though the request came from inside Kubernetes.
-
-------------------------------------------------------------------------
-
-# 19. Target Authorization Rules
-
-Example:
-
-``` text
-/actuator/health/**
-→ public for Kubernetes probes
-
-/api/orders/**
-→ CUSTOMER / ADMIN
-
-/api/admin/**
-→ ADMIN
-```
-
-Order Service:
-
-``` text
-GET /orders/**
-→ CUSTOMER / ADMIN / SYSTEM_ORDER
-
-POST /orders/**
-→ CUSTOMER / ADMIN
-
-DELETE /orders/**
-→ ADMIN
-```
-
-We can refine ownership rules at service level.
-
-------------------------------------------------------------------------
-
-# 20. Gateway Dependencies
-
-For Spring Cloud Gateway WebFlux:
-
-``` gradle
-implementation 'org.springframework.boot:spring-boot-starter-security'
-implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
-```
-
-Stage 5 needs Resource Server support because Gateway validates bearer
-JWTs.
-
-Do **not** add OAuth2 Client merely because OAuth is involved.
-
-OAuth2 Client becomes relevant when Gateway itself participates as an
-OAuth client/login/token-relay component, which Stage 6 discusses.
-
-------------------------------------------------------------------------
-
-# 21. Gateway JWT Configuration
-
-`application-k8s.yml`:
-
-``` yaml
-spring:
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: ${JWT_ISSUER_URI}
-```
-
-Kubernetes environment:
-
-``` yaml
-env:
-  - name: JWT_ISSUER_URI
-    value: "http://keycloak:8080/realms/ecom-realm"
-```
-
-Important:
-
-> The configured issuer must match the token's `iss` claim.
-
-A wrong issuer is not a harmless URL mismatch---it means the token came
-from a different security authority than the resource server expects.
-
-------------------------------------------------------------------------
-
-# 22. Gateway SecurityWebFilterChain
-
-Gateway WebFlux uses reactive Spring Security.
-
-``` java
-@Configuration
-@EnableWebFluxSecurity
-public class GatewaySecurityConfig {
-
-    @Bean
-    SecurityWebFilterChain securityWebFilterChain(
-            ServerHttpSecurity http) {
-
-        return http
-            .csrf(ServerHttpSecurity.CsrfSpec::disable)
-
-            .authorizeExchange(exchange -> exchange
-                .pathMatchers("/actuator/health/**")
-                    .permitAll()
-
-                .pathMatchers("/api/admin/**")
-                    .hasRole("ADMIN")
-
-                .pathMatchers("/api/orders/**")
-                    .hasAnyRole(
-                        "CUSTOMER",
-                        "ADMIN",
-                        "SYSTEM_ORDER"
-                    )
-
-                .anyExchange()
-                    .authenticated()
-            )
-
-            .oauth2ResourceServer(oauth2 ->
-                oauth2.jwt(Customizer.withDefaults())
-            )
-
-            .build();
-    }
-}
-```
-
-This establishes:
-
-``` text
-public health endpoint
-protected business endpoints
-JWT Resource Server
-route-level authorization
-```
-
-------------------------------------------------------------------------
-
-# 23. Keycloak Realm Roles Need Mapping
-
-Spring automatically understands standard scope claims well.
-
-But Keycloak realm roles often look like:
-
-``` json
-{
-  "realm_access": {
-    "roles": [
-      "CUSTOMER",
-      "offline_access"
-    ]
-  }
-}
-```
-
-`hasRole("CUSTOMER")` expects an authority:
-
-``` text
-ROLE_CUSTOMER
-```
-
-So we need to convert:
-
-``` text
-realm_access.roles
-        ↓
-CUSTOMER
-        ↓
-ROLE_CUSTOMER
-```
-
-------------------------------------------------------------------------
-
-# 24. Reactive Keycloak Role Converter
-
-Conceptual implementation:
-
-``` java
-@Bean
-Converter<Jwt, Mono<AbstractAuthenticationToken>>
-authenticationConverter() {
-
-    JwtAuthenticationConverter delegate =
-        new JwtAuthenticationConverter();
-
-    delegate.setJwtGrantedAuthoritiesConverter(
-        new KeycloakRealmRoleConverter()
-    );
-
-    return new ReactiveJwtAuthenticationConverterAdapter(
-        delegate
-    );
-}
-```
-
-Role converter:
-
-``` java
-public class KeycloakRealmRoleConverter
-        implements Converter<Jwt, Collection<GrantedAuthority>> {
-
-    @Override
-    public Collection<GrantedAuthority> convert(Jwt jwt) {
-
-        Map<String, Object> realmAccess =
-            jwt.getClaimAsMap("realm_access");
-
-        if (realmAccess == null) {
-            return List.of();
-        }
-
-        Object rolesObject = realmAccess.get("roles");
-
-        if (!(rolesObject instanceof Collection<?> roles)) {
-            return List.of();
-        }
-
-        return roles.stream()
-            .map(Object::toString)
-            .map(role ->
-                new SimpleGrantedAuthority("ROLE_" + role)
-            )
-            .toList();
-    }
-}
-```
-
-Then connect the converter:
-
-``` java
-.oauth2ResourceServer(oauth2 ->
-    oauth2.jwt(jwt ->
-        jwt.jwtAuthenticationConverter(
-            authenticationConverter()
-        )
-    )
-)
-```
-
-------------------------------------------------------------------------
-
-# 25. Do Not Accidentally Lose Scope Authorities
-
-Suppose later we need both:
-
-``` text
-ROLE_CUSTOMER
-```
-
-and:
-
-``` text
-SCOPE_orders.read
-```
-
-A custom converter that returns only Keycloak realm roles can
-accidentally discard Spring's default scope authorities.
-
-Production-quality mapping should combine:
-
-``` text
-default scope authorities
-+
-Keycloak role authorities
-```
-
-This is a subtle but useful interview point.
-
-------------------------------------------------------------------------
-
-# 26. Order Service Dependencies
-
-Order Service should also be a Resource Server:
-
-``` gradle
-implementation 'org.springframework.boot:spring-boot-starter-security'
-implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
-```
-
-Configuration:
-
-``` yaml
-spring:
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: ${JWT_ISSUER_URI}
-```
-
-Order independently validates the JWT.
-
-------------------------------------------------------------------------
-
-# 27. Order SecurityFilterChain
-
-Order is a normal servlet/MVC Spring Boot service:
-
-``` java
-@Configuration
-@EnableWebSecurity
-public class OrderSecurityConfig {
-
-    @Bean
-    SecurityFilterChain securityFilterChain(
-            HttpSecurity http) throws Exception {
-
-        http
-            .csrf(csrf -> csrf.disable())
-
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/actuator/health/**")
-                    .permitAll()
-
-                .requestMatchers(
-                    HttpMethod.DELETE,
-                    "/orders/**"
-                )
-                    .hasRole("ADMIN")
-
-                .requestMatchers(
-                    HttpMethod.GET,
-                    "/orders/**"
-                )
-                    .hasAnyRole(
-                        "CUSTOMER",
-                        "ADMIN",
-                        "SYSTEM_ORDER"
-                    )
-
-                .requestMatchers(
-                    HttpMethod.POST,
-                    "/orders/**"
-                )
-                    .hasAnyRole(
-                        "CUSTOMER",
-                        "ADMIN"
-                    )
-
-                .anyRequest()
-                    .authenticated()
-            )
-
-            .oauth2ResourceServer(oauth2 ->
-                oauth2.jwt(Customizer.withDefaults())
-            );
-
-        return http.build();
-    }
-}
-```
-
-Reuse the Keycloak role converter from the Gateway concept, adapted for
-servlet security.
-
-------------------------------------------------------------------------
-
-# 28. Coarse vs Domain Authorization
-
-Suppose:
-
-``` text
-customer1 owns order 100
-customer2 owns order 200
-```
-
-Both have:
-
-``` text
-ROLE_CUSTOMER
-```
-
-Gateway cannot safely decide:
-
-``` text
-customer1 may access order 100
-but not order 200
-```
-
-without taking ownership of Order domain data.
-
-Order Service should perform:
-
-``` text
-authenticated user
-        +
-requested order
-        +
-order ownership/business state
-        ↓
-domain authorization
-```
-
-Example:
-
-``` java
-if (!order.getCustomerId().equals(currentCustomerId)
-        && !isAdmin(authentication)) {
-    throw new AccessDeniedException("Forbidden");
-}
-```
-
-------------------------------------------------------------------------
-
-# 29. Do Not Trust Customer ID from Request Body
-
-Bad design:
-
-``` json
-{
-  "customerId": "customer999",
-  "productId": 100
-}
-```
-
-and then:
-
-``` java
-order.setCustomerId(request.customerId());
-```
-
-An authenticated customer could create an order for another identity.
-
-Better:
-
-``` text
-authenticated JWT
-      ↓
-trusted subject/customer claim
-      ↓
-derive caller identity
-```
-
-The token is the trusted identity source, not a caller-controlled
-`customerId`.
-
-------------------------------------------------------------------------
-
-# 30. Keycloak Local Lab Setup
-
-Run Keycloak in Minikube.
-
-Conceptual deployment:
-
-``` yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: keycloak
-  namespace: ecommerce
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: keycloak
-  template:
-    metadata:
-      labels:
-        app: keycloak
-    spec:
-      containers:
-        - name: keycloak
-          image: quay.io/keycloak/keycloak:<PINNED_VERSION>
-          args:
-            - start-dev
-          ports:
-            - containerPort: 8080
-```
-
-For a learning environment, `start-dev` is acceptable.
-
-It is **not** our production Keycloak configuration.
-
-Pin a tested image version in the actual project instead of relying on
-`latest`.
-
-------------------------------------------------------------------------
-
-# 31. Keycloak Service
-
-``` yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: keycloak
-  namespace: ecommerce
-spec:
-  selector:
-    app: keycloak
-  ports:
-    - port: 8080
-      targetPort: 8080
-```
-
-Inside namespace:
-
-``` text
-http://keycloak:8080
-```
-
-Realm issuer:
-
-``` text
-http://keycloak:8080/realms/ecom-realm
-```
-
-But there is an important issuer-address issue when tokens are obtained
-from outside the cluster. We handle that shortly.
-
-------------------------------------------------------------------------
-
-# 32. Create Realm
-
-Create:
-
-``` text
-ecom-realm
-```
-
-Do not use:
-
-``` text
-master
-```
-
-for application identities.
-
-The master realm is for Keycloak administration.
-
-------------------------------------------------------------------------
-
-# 33. Create Roles
-
-Realm roles:
-
-``` text
-CUSTOMER
-ADMIN
-SYSTEM_ORDER
-```
-
-Assign:
-
-``` text
-customer1 → CUSTOMER
-admin1    → ADMIN
-```
-
-Stage 6 will use `SYSTEM_ORDER` for machine identity.
-
-------------------------------------------------------------------------
-
-# 34. Create Public UI Client
-
-Example:
-
-``` text
-customer-portal-ui
-```
-
-For browser applications:
-
-``` text
-public client
-Authorization Code flow
-PKCE
-```
-
-Do not put a reusable client secret in browser JavaScript.
-
-Browser apps cannot safely protect a client secret.
-
-------------------------------------------------------------------------
-
-# 35. Why Authorization Code + PKCE?
-
-Simplified flow:
-
-``` text
-Browser
-   |
-redirect
-   v
-Keycloak Login
-   |
-Authorization Code
-   v
-Browser
-   |
-code + PKCE verifier
-   v
-Keycloak
-   |
-Access Token
-```
-
-PKCE protects the authorization-code exchange against code interception.
-
-For modern browser/mobile clients, this is the normal direction rather
-than teaching legacy password-grant flows as the primary architecture.
-
-------------------------------------------------------------------------
-
-# 36. Password Grant Awareness
-
-For quick labs, people sometimes directly send:
-
-``` text
-username
-password
-client_id
-```
-
-to the token endpoint.
-
-Do not make this the architecture you present in an interview for a
-modern user-facing application.
-
-Our architectural flow is:
-
-``` text
-Authorization Code + PKCE
-```
-
-If a simplified lab token-generation method is temporarily used, label
-it as a testing shortcut.
-
-------------------------------------------------------------------------
-
-# 37. Obtain Token for Testing
-
-After configuring the realm/client/user, obtain a CUSTOMER access token
-using the chosen lab flow.
-
-Store:
-
-``` bash
-export CUSTOMER_TOKEN='...'
-```
-
-and:
-
-``` bash
-export ADMIN_TOKEN='...'
-```
-
-Do not commit tokens to files or shell scripts.
-
-------------------------------------------------------------------------
-
-# 38. Inspect JWT Safely
-
-Decode the token payload for learning.
-
-Look for:
-
-``` text
-iss
-sub
-exp
-aud
-scope
-realm_access.roles
-```
-
-Remember:
-
-``` text
-decode != validate
-```
-
-Anyone can decode an unencrypted JWT payload.
-
-Trust comes from cryptographic validation plus claim validation.
-
-------------------------------------------------------------------------
-
-# 39. Test 1 --- Health Without Token
-
-``` bash
-curl -i \
-  "$GATEWAY_URL/actuator/health"
-```
-
-Expected:
-
-``` text
-HTTP 200
-```
-
-Why public?
-
-Kubernetes readiness/liveness probes should not need a user JWT.
-
-------------------------------------------------------------------------
-
-# 40. Test 2 --- Protected API Without Token
-
-``` bash
-curl -i \
-  "$GATEWAY_URL/api/orders"
-```
-
-Expected:
-
-``` text
-401 Unauthorized
-```
-
-Request is stopped before Order business logic executes.
-
-------------------------------------------------------------------------
-
-# 41. Test 3 --- Valid CUSTOMER Token
-
-``` bash
-curl -i \
-  "$GATEWAY_URL/api/orders" \
-  -H "Authorization: Bearer $CUSTOMER_TOKEN"
-```
-
-Expected:
-
-``` text
-200
-```
-
-Flow:
-
-``` text
-Gateway validates token
-Gateway authorizes CUSTOMER
-Gateway routes request
-Order validates token
-Order authorizes CUSTOMER
-```
-
-------------------------------------------------------------------------
-
-# 42. Test 4 --- CUSTOMER Calls ADMIN API
-
-``` bash
-curl -i \
-  "$GATEWAY_URL/api/admin/report" \
-  -H "Authorization: Bearer $CUSTOMER_TOKEN"
-```
-
-Expected:
-
-``` text
-403 Forbidden
-```
-
-The token is valid.
-
-The permission is insufficient.
-
-------------------------------------------------------------------------
-
-# 43. Test 5 --- ADMIN Token
-
-``` bash
-curl -i \
-  "$GATEWAY_URL/api/admin/report" \
-  -H "Authorization: Bearer $ADMIN_TOKEN"
-```
-
-Expected:
-
-``` text
-200
-```
-
-assuming the route and backend endpoint exist.
-
-------------------------------------------------------------------------
-
-# 44. Test 6 --- Tampered JWT
-
-Take a valid token and modify its payload.
-
-Example:
-
-``` text
-CUSTOMER → ADMIN
-```
-
-Send the altered token.
-
-Expected:
-
-``` text
-401
-```
-
-because the signature no longer matches the content.
-
-This is one of the best practical exercises for understanding JWT
-signatures.
-
-------------------------------------------------------------------------
-
-# 45. Test 7 --- Expired Token
-
-Use an expired token.
-
-Expected:
-
-``` text
-401
-```
-
-Resource Server validates token time constraints.
-
-------------------------------------------------------------------------
-
-# 46. Test 8 --- Wrong Issuer
-
-Use a correctly signed token from a different untrusted realm/issuer.
-
-Expected:
-
-``` text
-401
-```
-
-This proves:
-
-``` text
-valid cryptographic signature alone
-!=
-trusted token
-```
-
-The issuer must also match the configured trust boundary.
-
-------------------------------------------------------------------------
-
-# 47. Test 9 --- Wrong Audience
-
-If audience validation is configured:
-
-``` text
-token aud = some-other-api
-expected  = ecommerce-api
-```
-
-Expected:
-
-``` text
-401
-```
-
-This prevents a token intended for another resource from being reused
-against this API.
-
-------------------------------------------------------------------------
-
-# 48. Test 10 --- Direct Order Call Without Token
-
-Expose Order temporarily for the test or call it from a temporary Pod:
-
-``` bash
-kubectl run curl-test \
-  -n ecommerce \
-  --rm -it \
-  --image=curlimages/curl \
-  -- sh
-```
-
-Then:
-
-``` bash
-curl -i http://order-service:8080/orders
-```
-
-Expected:
-
-``` text
-401
-```
-
-This proves Order does not depend solely on Gateway for authentication.
-
-------------------------------------------------------------------------
-
-# 49. Direct Order Call With Valid Token
-
-Inside the cluster:
-
-``` bash
-curl -i \
-  http://order-service:8080/orders \
-  -H "Authorization: Bearer $CUSTOMER_TOKEN"
-```
-
-Expected:
-
-``` text
-200
-```
-
-Order is independently capable of validating the caller.
-
-------------------------------------------------------------------------
-
-# 50. What Happens During JWT Validation?
-
-Conceptual sequence:
-
-``` text
-Request
-   |
-Authorization: Bearer JWT
-   v
-Bearer token authentication filter
-   |
-decode JWT
-   |
-read kid
-   |
-find trusted public key
-   |
-verify signature
-   |
-validate iss
-validate exp/nbf
-validate aud if configured
-   |
-convert claims/scopes/roles
-   |
-Authentication object
-   |
-authorization rules
-   |
-Controller
-```
-
-Failure before authenticated identity:
-
-``` text
-401
-```
-
-Authenticated but insufficient authority:
-
-``` text
-403
-```
-
-------------------------------------------------------------------------
-
-# 51. Does Gateway Call Keycloak for Every Request?
-
-With self-contained JWT validation:
-
-``` text
-No.
-```
-
-Typical behavior:
-
-``` text
-Gateway
-   |
-uses locally available/cached public key material
-   |
-validates JWT locally
-```
-
-This is one scalability advantage of JWTs.
-
-Keycloak does not need a synchronous introspection call for every normal
-JWT request.
-
-------------------------------------------------------------------------
-
-# 52. Then Why Does Gateway Need Keycloak/JWKS?
-
-Signing keys can change.
-
-Resource Server needs trusted public key material.
-
-Conceptually:
-
-``` text
-JWT kid
-  |
-resource server key cache
-  |
-known?
- /   \
-yes   no
- |     |
-verify refresh/discover key material
-```
-
-Spring Security supports JWK-based key rotation.
-
-So the IdP is not necessarily in the hot path for every request, but it
-remains an important dependency for metadata/key discovery and token
-issuance.
-
-------------------------------------------------------------------------
-
-# 53. Key Rotation
-
-Suppose Keycloak changes:
-
-``` text
-old private key
-→ new private key
-```
-
-New tokens use a new:
-
-``` text
-kid
-```
-
-Resource servers obtain updated public key material.
-
-A good identity platform rotates keys without requiring every
-microservice to be redeployed with hard-coded public keys.
-
-Interview point:
-
-> Prefer issuer/JWKS-based trust and planned key rotation over manually
-> distributing static signing keys to every service.
-
-------------------------------------------------------------------------
-
-# 54. Keycloak Down --- Existing JWTs
-
-Important failure scenario.
-
-Suppose:
-
-``` text
-Keycloak becomes unavailable
-```
-
-A user already has:
-
-``` text
-valid unexpired JWT
-```
-
-Gateway may still validate it using already available public key
-material.
-
-So:
-
-``` text
-Keycloak outage
-!=
-all API requests instantly fail
-```
-
-But operations requiring:
-
-``` text
-new login
-new token
-token refresh
-unknown signing key discovery
-```
-
-may fail.
-
-Actual behavior depends on key availability/cache/configuration, so test
-it with the exact Spring/Keycloak versions used by the project.
-
-------------------------------------------------------------------------
-
-# 55. JWT Revocation Trade-Off
-
-Self-contained JWT:
-
-``` text
-issued at 10:00
-expires at 10:15
-```
-
-At 10:05:
-
-``` text
-ADMIN role removed
-```
-
-The already-issued JWT may still contain:
-
-``` text
-ADMIN
-```
-
-until the token expires or another revocation/control mechanism prevents
-its use.
-
-This is a trade-off:
-
-``` text
-local validation and scalability
-vs
-immediate centralized revocation
-```
-
-Shorter access-token lifetime reduces the exposure window but increases
-token-renewal activity.
-
-------------------------------------------------------------------------
-
-# 56. JWT vs Opaque Token
-
-## JWT
-
-``` text
-self-contained claims
-local validation possible
-good distributed scalability
-revocation can be less immediate
-```
-
-## Opaque Token
-
-``` text
-token itself carries no useful client-readable claims
-resource server may use introspection
-central authorization server can provide current token state
-adds runtime network dependency
-```
-
-Do not say:
-
-``` text
-JWT is always better.
-```
-
-Choose based on security, revocation, latency, availability and
-operational requirements.
-
-------------------------------------------------------------------------
-
-# 57. CSRF --- Why Are We Disabling It Here?
-
-Our APIs use bearer tokens in the:
-
-``` http
-Authorization
-```
-
-header rather than browser cookies automatically attached to every
-request.
-
-For a stateless bearer-token API, disabling CSRF is commonly
-appropriate.
-
-But do not memorize:
-
-``` text
-REST API = always disable CSRF
-```
-
-If authentication uses cookies/browser sessions, the threat model
-changes.
-
-------------------------------------------------------------------------
-
-# 58. CORS Is Not Authentication
-
-CORS answers:
-
-``` text
-May browser JavaScript from origin X call this API?
-```
-
-OAuth/JWT answers:
-
-``` text
-Who is the caller?
-Is the token trusted?
-What may the caller do?
-```
-
-CORS is a browser policy.
-
-It does not protect APIs from:
-
-``` text
-curl
-Postman
-server-to-server callers
-```
-
-Never use CORS as an authentication mechanism.
-
-------------------------------------------------------------------------
-
-# 59. Do Not Log Tokens
-
-Bad:
-
-``` java
-log.info("Authorization={}",
-         request.getHeaders().getFirst("Authorization"));
-```
-
-Access tokens are credentials.
-
-Logging them can leak identity and authorization capability into:
-
-``` text
-ELK
-CloudWatch
-support exports
-developer consoles
-incident tickets
-```
-
-Log:
-
-``` text
-principal/subject
-client id if appropriate
-roles/scopes where safe
-trace id
-request path
-authorization outcome
-```
-
-not the raw token.
-
-------------------------------------------------------------------------
-
-# 60. Kubernetes Secret vs JWT Public Configuration
-
-This configuration:
-
-``` text
-JWT_ISSUER_URI
-```
-
-is normally not a secret.
-
-A client secret/password is.
-
-Use:
-
-``` text
-ConfigMap/env
-→ non-secret endpoints/configuration
-
-Secret/external secret manager
-→ credentials
-```
-
-Do not put everything into Kubernetes Secret merely because it relates
-to security.
-
-------------------------------------------------------------------------
-
-# 61. Network-Level Protection
-
-Even with JWT validation, backend services should normally not be
-publicly exposed.
-
-Preferred:
-
-``` text
-Internet
-   |
-Gateway
-   |
-ClusterIP
-   |
-Order
-```
-
-not:
-
-``` text
-Internet
-   +--> Gateway
-   |
-   +--> Order NodePort
-```
-
-Application security and network exposure should reinforce each other.
-
-------------------------------------------------------------------------
-
-# 62. NetworkPolicy Awareness
-
-In production-style Kubernetes:
-
-``` text
-Gateway
-   |
-allowed
-   v
-Order
-```
-
-Other unrelated workloads can be denied by NetworkPolicy where
-appropriate.
-
-But:
-
-``` text
-NetworkPolicy != authorization
-```
-
-Order should still validate application identity.
-
-This is defense in depth.
-
-------------------------------------------------------------------------
-
-# 63. Issuer URL Problem in Minikube
-
-This is an important practical edge case.
-
-Suppose the browser obtains a token from:
-
-``` text
-http://localhost:8080/realms/ecom-realm
-```
-
-Then token contains:
-
-``` json
-"iss":
-"http://localhost:8080/realms/ecom-realm"
-```
-
-But Gateway inside Kubernetes is configured:
-
-``` text
-http://keycloak:8080/realms/ecom-realm
-```
-
-These issuer values differ.
-
-Result:
-
-``` text
-JWT issuer validation fails
-```
-
-even though both addresses reach the same Keycloak instance.
-
-The issuer is an **identity identifier**, not merely a network location.
-
-------------------------------------------------------------------------
-
-# 64. Solve Issuer Addressing Deliberately
-
-Use one stable issuer hostname that:
-
-``` text
-clients can reach
-AND
-resource servers can resolve/reach
-AND
-matches token iss exactly
-```
-
-Possible lab approaches:
-
-``` text
-Minikube ingress/host mapping
-stable local DNS name
-Keycloak hostname configuration
-```
-
-Do not "solve" it by disabling issuer validation.
-
-Production identity URLs should be stable externally meaningful names,
-for example:
-
-``` text
-https://identity.example.com/realms/ecommerce
-```
-
-------------------------------------------------------------------------
-
-# 65. Clock Skew
-
-JWT time validation depends on clocks.
-
-Claims:
-
-``` text
-iat
-nbf
-exp
-```
-
-If machines have significantly incorrect clocks, valid tokens can
-appear:
-
-``` text
-not yet valid
-or
-already expired
-```
-
-Production nodes should have reliable time synchronization.
-
-Spring Security permits reasonable timestamp validation behavior, but
-clock skew is not an excuse for badly synchronized infrastructure.
-
-------------------------------------------------------------------------
-
-# 66. Failure Matrix
-
-  Scenario                                   Expected
-  ------------------------------------------ -------------------
-  No token                                   401
-  Malformed token                            401
-  Tampered signature                         401
-  Expired token                              401
-  Wrong issuer                               401
-  Wrong audience when enforced               401
-  CUSTOMER accesses CUSTOMER API             success
-  CUSTOMER accesses ADMIN API                403
-  ADMIN accesses ADMIN API                   success
-  Direct Order without token                 401
-  Valid user requests another user's order   service-level 403
-  Spoofed role header                        ignored
-  Keycloak down + known key + valid JWT      may continue
-  Keycloak down + new login/token needed     fails
-
-------------------------------------------------------------------------
-
-# 67. Security Responsibility Matrix
-
-  Responsibility                        Gateway                   Order
-  ---------------------------------- ---------- -----------------------
-  Validate external JWT                     Yes                     Yes
-  Basic authenticated route policy          Yes                     Yes
-  Broad role checks                         Yes   Yes where appropriate
-  Order ownership                            No                     Yes
-  Order state/business permission            No                     Yes
-  Hide backend topology                     Yes                      No
-  Network exposure policy              Platform                Platform
-  Token issuance                             No                      No
-  Identity lifecycle                   Keycloak                Keycloak
-
-The key principle:
-
-> Gateway security reduces bad traffic early, but domain services remain
-> responsible for their own security boundary.
-
-------------------------------------------------------------------------
-
-# 68. What Should NOT Go Into Gateway?
-
-Avoid turning Gateway into:
-
-``` text
-authentication
-+
-order ownership logic
-+
-payment permission logic
-+
-inventory business rules
-+
-customer database lookups
-+
-every authorization rule
-```
-
-That becomes a:
-
-``` text
-God Gateway
-```
-
-Problems:
-
-``` text
-tight coupling
-deployment bottleneck
-domain leakage
-harder scaling
-larger blast radius
-```
-
-Gateway should stay focused on cross-cutting edge concerns.
-
-------------------------------------------------------------------------
-
-# 69. Production Security Checklist
-
-Before calling Gateway security production-ready:
-
--   trusted issuer configured;
--   signature validation active;
--   token expiration validated;
--   audience strategy decided;
--   health endpoints intentionally public;
--   business routes authenticated;
--   coarse route authorization configured;
--   domain authorization remains in services;
--   backend services independently validate identity;
--   backend services not unnecessarily public;
--   roles/scopes follow least privilege;
--   tokens and secrets are never logged;
--   key rotation tested;
--   expired/tampered/wrong-issuer tokens tested;
--   401 and 403 metrics observable;
--   client secrets stored outside source control;
--   HTTPS/TLS used in production;
--   stable issuer hostname used;
--   IdP HA/failure behavior understood.
-
-------------------------------------------------------------------------
-
-# 70. Architect Interview Questions
-
-## Q1. Why validate JWT at Gateway and service?
-
-> Gateway rejects invalid or unauthorized traffic early, while service
-> validation preserves the service's own trust boundary and protects
-> against bypass/internal calls. This is defense in depth rather than
-> assuming all internal traffic is trusted.
-
-## Q2. OAuth vs OIDC?
-
-> OAuth is primarily authorization/delegated API access. OIDC adds
-> authentication/identity on top of OAuth.
-
-## Q3. JWT vs OAuth?
-
-> OAuth is a protocol/framework for authorization. JWT is a token
-> format. OAuth access tokens may be JWTs or opaque tokens.
-
-## Q4. 401 vs 403?
-
-> 401 means authentication could not be established; 403 means the
-> caller is authenticated but lacks permission.
-
-## Q5. Why not call Keycloak for every request?
-
-> Self-contained JWTs can be cryptographically validated locally using
-> trusted public keys, reducing latency and IdP hot-path dependency.
-
-## Q6. What happens if Keycloak is down?
-
-> Existing valid JWTs may continue to validate if the resource server
-> already has usable signing keys, while login, token issuance/refresh
-> and unknown-key retrieval can fail.
-
-## Q7. How does key rotation work?
-
-> The issuer publishes a JWK set. Tokens identify signing keys with
-> `kid`; resource servers refresh public key material as the
-> authorization server rotates signing keys.
-
-## Q8. Why validate audience?
-
-> Issuer proves who issued the token; audience helps prove the token was
-> intended for this resource/API.
-
-## Q9. Why not put ownership checks in Gateway?
-
-> Ownership is domain data and business authorization. Putting it in
-> Gateway couples the edge layer to service internals and creates a God
-> Gateway.
-
-## Q10. Why short-lived JWTs?
-
-> They reduce the exposure window of a stolen token and stale
-> authorization claims, though they increase renewal frequency.
-
-------------------------------------------------------------------------
-
-# 71. Hands-On Assignment
-
-Do not mark Stage 5 complete until you perform:
-
-## Identity Provider
-
--   deploy Keycloak in Minikube;
--   create `ecom-realm`;
--   create `CUSTOMER`, `ADMIN`, `SYSTEM_ORDER`;
--   create `customer1`, `admin1`;
--   create a public Authorization Code + PKCE client;
--   inspect OIDC discovery metadata;
--   inspect JWKS/public-key endpoint.
-
-## Gateway
-
--   configure Spring Security;
--   configure OAuth2 Resource Server JWT;
--   configure issuer;
--   map Keycloak realm roles;
--   keep health endpoint public;
--   protect order routes;
--   protect admin routes.
-
-## Order
-
--   configure Resource Server;
--   validate JWT independently;
--   map Keycloak roles;
--   enforce method/path permissions;
--   implement domain ownership authorization.
-
-## Failure Tests
-
--   no token → 401;
--   invalid token → 401;
--   tampered token → 401;
--   expired token → 401;
--   wrong issuer → 401;
--   wrong audience when configured → 401;
--   wrong role → 403;
--   direct Order without token → 401;
--   attempt another customer's order → 403;
--   Keycloak outage behavior.
-
-------------------------------------------------------------------------
-
-# 72. Coding-Agent Prompt
-
-``` text
-Inspect the existing microservices-workouts project and Stage 4 implementation first.
-
-Implement Stage 5 only:
-Gateway Security — OAuth2, OIDC & JWT.
-
-Current architecture:
-- Spring Cloud Gateway WebFlux
-- Order Service Spring Boot MVC
-- Kubernetes / Minikube
-- Gateway routes to http://order-service:8080
-- existing probes, replicas, HPA and routing must remain working
-
-Identity Provider:
-- Keycloak
-- realm: ecom-realm
-- realm roles:
-  CUSTOMER
-  ADMIN
-  SYSTEM_ORDER
-
-Requirements:
-
-1. Gateway
-- add Spring Security
-- add OAuth2 Resource Server JWT
-- issuer from JWT_ISSUER_URI
-- /actuator/health/** permitAll
-- /api/admin/** requires ADMIN
-- /api/orders/** allows CUSTOMER, ADMIN and SYSTEM_ORDER as appropriate
-- map Keycloak realm_access.roles to ROLE_*
-- preserve OAuth scope authorities if a custom converter is added
-- never log bearer tokens
-
-2. Order Service
-- configure OAuth2 Resource Server JWT
-- validate JWT independently
-- health endpoints permitAll
-- GET /orders/** allows CUSTOMER, ADMIN, SYSTEM_ORDER
-- POST /orders/** allows CUSTOMER, ADMIN
-- DELETE /orders/** requires ADMIN
-- map Keycloak roles
-- keep domain authorization in Order Service
-
-3. Kubernetes
-- configure JWT_ISSUER_URI
-- do not expose Order publicly just for normal application traffic
-- keep health probes working
-- do not commit credentials
-
-4. Testing
-Provide commands/tests for:
-- health without token -> 200
-- protected route without token -> 401
-- valid CUSTOMER -> success
-- CUSTOMER on ADMIN route -> 403
-- valid ADMIN -> success
-- tampered token -> 401
-- expired token -> 401
-- wrong issuer -> 401
-- wrong audience when audience validation is enabled -> 401
-- direct Order without token -> 401
-- direct Order with valid token -> authorized according to service rules
-
-5. Important
-- inspect actual Spring Boot / Spring Security / Spring Cloud versions before coding
-- use the APIs appropriate to those versions
-- explain any Keycloak issuer-hostname configuration needed so the token's iss claim exactly matches the resource-server issuer
-- do not implement Stage 6 Client Credentials/token relay yet
-```
-
-------------------------------------------------------------------------
-
-# 73. Completion Checklist
-
-## Mental Model
-
--   [ ] Authentication vs authorization.
--   [ ] OAuth vs OIDC vs JWT.
--   [ ] Access Token vs ID Token.
--   [ ] Authorization Server vs Resource Server.
--   [ ] JWT header/payload/signature.
--   [ ] `iss`, `sub`, `exp`, `nbf`, `aud`.
--   [ ] JWK/JWKS and `kid`.
--   [ ] Roles vs scopes.
--   [ ] 401 vs 403.
--   [ ] JWT vs opaque token.
--   [ ] JWT revocation trade-off.
--   [ ] Zero Trust / defense in depth.
-
-## Implementation
-
--   [ ] Keycloak running.
--   [ ] `ecom-realm` created.
--   [ ] roles/users created.
--   [ ] Gateway validates JWT.
--   [ ] Gateway role mapping works.
--   [ ] Order validates JWT independently.
--   [ ] health endpoints remain available.
--   [ ] Order domain authorization exists.
--   [ ] no token/secret logging.
-
-## Failure Behavior
-
--   [ ] Missing token tested.
--   [ ] Tampered token tested.
--   [ ] Expired token tested.
--   [ ] Wrong issuer tested.
--   [ ] Wrong audience understood/tested.
--   [ ] Wrong role tested.
--   [ ] Direct-service bypass tested.
--   [ ] Keycloak outage tested.
--   [ ] Key rotation understood.
-
-------------------------------------------------------------------------
-
-# 74. Rapid Revision
-
-``` text
-OAuth
-→ authorization framework
-
-OIDC
-→ identity/authentication layer over OAuth
-
-JWT
-→ token format
-
-Access Token
-→ sent to API
-
-ID Token
-→ identity information for OIDC client
-
-Resource Server
-→ API validating access token
-
-Issuer
-→ who issued token
-
-Audience
-→ intended resource
-
-JWKS
-→ issuer's published public keys
-
-401
-→ authentication failed/missing
-
-403
-→ authenticated but forbidden
-
-Gateway authorization
-→ coarse edge policy
-
-Service authorization
-→ domain/business rules
-
-Gateway + Service validation
-→ defense in depth
-```
-
-------------------------------------------------------------------------
-
-# 75. Correct Next Stage
-
-After Stage 5:
-
-``` text
-06 — Token Relay & Service-to-Service Security
-```
-
-That stage answers:
-
-``` text
-Which identity should move downstream?
-When should Gateway relay a user token?
-When should Order use Client Credentials?
-What is service identity?
-How do we prevent header spoofing?
-```
-
-------------------------------------------------------------------------
-
-# Stage 5 One-Line Summary
-
-> **The Gateway should authenticate and reject obviously unauthorized
-> traffic early, but every protected service remains responsible for
-> validating trusted identity and enforcing its own domain
-> authorization; OAuth defines authorization flows, OIDC adds identity,
-> and JWT is only the signed token format carrying the claims.**
+# 05 — Gateway security: from browser login to microservice authorization
+
+Follow one request through this application's security implementation:
+**Browser → Keycloak login → Browser → API Gateway → Downstream service → Gateway → Browser**.
+Then follow an order-service call to inventory through the same gateway.
+
+This guide explains the concepts, the code that implements them, and how to test
+the behavior. Installation, users, credentials and Keycloak configuration live
+in the [Keycloak setup guide](../infra-setup/keycloak-setup.md).
+
+## Reading order
+
+1. [Understand the participants and security terms](#1-understand-the-participants-and-security-terms).
+2. [Open the UI and sign in with Keycloak](#2-open-the-ui-and-sign-in-with-keycloak).
+3. [Send the UI request to the API Gateway](#3-send-the-ui-request-to-the-api-gateway).
+4. [Validate the access token at the gateway](#4-validate-the-access-token-at-the-gateway).
+5. [Build trusted identity headers at the gateway](#5-build-trusted-identity-headers-at-the-gateway).
+6. [Route the request to a downstream service](#6-route-the-request-to-a-downstream-service).
+7. [Authorize the operation inside the downstream service](#7-authorize-the-operation-inside-the-downstream-service).
+8. [Return the response through the gateway](#8-return-the-response-through-the-gateway).
+9. [Call another microservice through the gateway](#9-call-another-microservice-through-the-gateway).
+10. [Perform manual verification](#manual-verification--intellij-local-profile).
+
+## 1. Understand the participants and security terms
+
+| Participant | Responsibility in this application |
+| --- | --- |
+| Browser demo | Sign the user in and send an access token with API requests |
+| Keycloak | Authenticate users or service clients and issue signed tokens |
+| API Gateway | Validate the token, replace identity headers and route requests |
+| Downstream microservice | Check whether this caller may perform the requested operation |
+
+**Authentication** establishes who the caller is. **Authorization** decides what
+that caller may do. A valid login does not automatically permit every operation.
+For example, `customer1` can read their own order but cannot use the admin endpoint.
+
+| Term | Meaning in this guide |
+| --- | --- |
+| OAuth 2.0 | The framework used to obtain access tokens for calling APIs |
+| OpenID Connect (OIDC) | The identity layer used for user login on top of OAuth 2.0 |
+| Access token | The credential sent to the gateway to access an API |
+| ID token | Information about the login for the browser client; not the API credential |
+| JWT | A signed token format containing claims such as subject, issuer and expiry |
+| Claim | A named value inside a token, such as username, tenant or audience |
+| Role | A business category such as `customer`, `admin` or `service` |
+| Permission | An allowed action such as `orders:read` or `inventory:read` |
+| Tenant | A boundary between groups of application data, such as `demo` and `other` |
+
+## 2. Open the UI and sign in with Keycloak
+
+The browser first opens the React application on port 5173. Clicking
+**Sign in to your account** redirects the browser to Keycloak. The user enters
+credentials on Keycloak's login page; the gateway does not process that password.
+
+After login, Keycloak redirects the browser back with a short-lived authorization
+code. The demo checks `state` to associate the response with the login it started,
+then exchanges the code with a PKCE verifier for tokens. PKCE binds that code
+exchange to the browser that initiated the login. A public browser client cannot
+keep a client secret, so this flow uses no secret.
+
+### Complete browser request sequence
+
+```mermaid
+sequenceDiagram
+    participant UI as React UI
+    participant KC as Keycloak
+    participant GW as API Gateway
+    participant OS as Order service
+    UI->>KC: Open login with state and PKCE challenge
+    KC-->>UI: User signs in and browser receives authorization code
+    UI->>UI: Verify returned state
+    UI->>KC: Exchange code with PKCE verifier
+    KC-->>UI: Access token and ID token
+    UI->>GW: Bearer API request through local proxy
+    GW->>GW: Validate signature and token claims
+    GW->>OS: Forward request with fresh identity headers
+    OS->>OS: Check permissions and resource ownership and tenant
+    OS-->>GW: API response
+    GW-->>UI: API response
+```
+
+The React browser demo runs separately at
+`http://localhost:5173/`. It uses public Keycloak client
+`security-demo-ui`, Authorization Code with PKCE S256, and an OAuth state value.
+It contains no client secret. The Keycloak JavaScript adapter keeps access and
+refresh tokens in memory, checks the existing SSO session on reload, and refreshes
+the access token before API calls when needed. Vite proxies API requests to the
+gateway, so they are same-origin from the browser's perspective. Keycloak allows
+the React origin for token exchange.
+
+The frontend implementation is in
+[App.jsx](../../ecom-ui/src/App.jsx), with authentication in
+[auth.js](../../ecom-ui/src/auth.js) and gateway calls in
+[api.js](../../ecom-ui/src/api.js). The
+[React project guide](../../ecom-ui/README.md) covers frontend startup and configuration.
+The diagram shows the complete journey; the following topics explain each API
+request stage in order.
+
+## 3. Send the UI request to the API Gateway
+
+After login, React loads the caller identity with this request:
+
+```http
+GET /api/orders/security/me HTTP/1.1
+Host: localhost:5173
+Authorization: Bearer <access_token>
+```
+
+The UI sends same-origin business requests to port **5173**. The Vite proxy
+forwards them to gateway port **9100**, preserving the Bearer header. It sends the access
+token on each request; the gateway does not use a browser login session to
+authenticate subsequent API calls. The UI does not need to construct identity
+headers. The gateway derives those from the verified token.
+
+The gateway protects the APIs. The React application's Keycloak adapter performs
+the authorization-code exchange directly with Keycloak.
+
+## 4. Validate the access token at the gateway
+
+Before a protected request reaches a downstream service, Spring Security checks
+the Bearer token. Reading or decoding a JWT alone is not validation: the signature
+must verify, and the token's claims must satisfy the gateway's rules.
+
+| Check | What it establishes |
+| --- | --- |
+| Signature | The token was signed with a key trusted by this gateway and was not modified |
+| Expiry and not-before | The token is within its accepted validity period |
+| Issuer (`iss`) | The token came from the expected Keycloak realm |
+| Audience (`aud`) | The token is intended for this gateway |
+
+Keycloak publishes public signing keys through a JWK endpoint. The gateway uses
+those keys for JWT validation; it does not send the user's password or request
+a new token from Keycloak for every API call.
+
+[GatewaySecurity.java](../../gateway-service/src/main/java/com/tip/ecommerce/gateway/security/GatewaySecurity.java)
+configures Spring Security's reactive resource server with:
+
+- RSA signature verification through Keycloak's JWK endpoint.
+- Standard expiry and not-before timestamp validation.
+- Exact issuer `http://localhost:8180/realms/ecommerce`.
+- Required audience `gateway-service`, added by a Keycloak audience mapper.
+- Stateless Bearer authentication; no form login or HTTP Basic.
+
+The issuer remains the same in both profiles. The signing-key URL is
+`http://localhost:8180/realms/ecommerce/protocol/openid-connect/certs` locally and
+`http://host.minikube.internal:8180/realms/ecommerce/protocol/openid-connect/certs` in Minikube. A Pod does not fetch
+keys from its own localhost. An ID token for `security-demo-ui` is not a gateway
+access token and fails the audience check.
+
+Only health endpoints are public on the gateway. All other gateway requests
+require a valid JWT. CSRF is disabled for this stateless Bearer API; the browser
+authorization flow separately uses PKCE and state.
+[Spring reactive JWT resource server](https://docs.spring.io/spring-security/reference/reactive/oauth2/resource-server/jwt.html).
+
+## 5. Build trusted identity headers at the gateway
+
+[IdentityHeadersFilter.java](../../gateway-service/src/main/java/com/tip/ecommerce/gateway/security/IdentityHeadersFilter.java)
+runs for routed requests after Spring Security authenticates them. It removes
+**all** incoming `X-Auth-*` headers, including unknown ones and duplicate values,
+and writes these headers from the validated token:
+
+| Header | Source |
+| --- | --- |
+| `X-Auth-Subject` | JWT `sub` |
+| `X-Auth-Username` | JWT `preferred_username` |
+| `X-Auth-Roles` | Business realm roles `admin`, `customer`, `service`; comma-separated |
+| `X-Auth-Permissions` | Realm roles containing `:`; comma-separated |
+| `X-Auth-Tenant` | Administrator-managed `tenant` claim |
+| `X-Auth-Client` | JWT `azp` (authorized client) |
+
+The original `Authorization` header is removed before forwarding. Required
+identity claims are checked before being written as HTTP headers. The gateway
+does not accept a caller's claimed username, tenant or admin role, even when
+they send those headers alongside a valid customer token.
+
+The gateway authenticates and establishes identity. Fine-grained authorization
+lives downstream, where resource data is available. Keycloak permissions in
+this lab are realm roles such as `orders:read`; they are not UMA/RPT permission
+tickets or a Keycloak Authorization Services policy engine.
+
+## 6. Route the request to a downstream service
+
+The gateway uses the request path to select the service. For example,
+`/api/orders/security/me` goes to order-service after authentication and identity
+header replacement.
+
+| Gateway path | Downstream service | Local port |
+| --- | --- | --- |
+| `/api/orders/**` | `order-service` | 9101 |
+| `/payments/**` | `payment-service` | 9102 |
+| `/notifications/**` | `notification-service` | 9103 |
+| `/api/products/**` | `product-service` | 9104 |
+| `/api/inventory/**` | `inventory-service` | 9105 |
+
+The gateway's profile configuration supplies the downstream addresses. The
+`local` profile uses local application ports; the `k8s` profile uses Kubernetes
+service names. Order/payment HTTP client configuration points to the gateway
+instead of the destination microservice.
+
+### Why downstream services can trust these headers in this POC
+
+Downstream services do not validate JWTs. They assume requests reach them from a
+trusted gateway. Their local ports remain callable for learning, and the headers
+are not signed: a direct caller can impersonate a user by supplying them.
+Gateway header replacement protects requests that pass through the gateway; it
+does not protect a service reached directly. Network isolation is a deployment
+requirement for this trust model and is not enforced by this implementation.
+
+## 7. Authorize the operation inside the downstream service
+
+Once the request arrives, the service reads the identity headers and evaluates
+its own policy. This is where access to business operations and data is decided.
+
+In order-service,
+[HeaderAuthorizationConfig.java](../../order-service/src/main/java/com/tip/ecommerce/order/security/HeaderAuthorizationConfig.java)
+checks the endpoint's `@RequireAccess` policy, and
+[Caller.java](../../order-service/src/main/java/com/tip/ecommerce/order/security/Caller.java)
+represents the caller and checks ownership/tenant rules. The other downstream
+services implement the same header-based contract.
+
+### Role-based access control (RBAC)
+
+An endpoint can require a role. `/api/orders/security/admin` requires `admin`.
+A valid customer token authenticates successfully at the gateway, but the
+order-service role check rejects this operation with **403**.
+
+### Permission checks
+
+An endpoint can require an action permission. Creating an order requires
+`orders:create`; reading inventory requires `inventory:read`. In this lab,
+permissions are Keycloak realm roles with colon-separated names. Customer and
+admin composite roles group several permissions together.
+
+If a policy specifies both a role and permissions, both checks must pass.
+When several permissions are listed, the interceptor accepts any one of them.
+Application controller methods without an explicit policy are denied.
+
+### Attribute-based access control (ABAC)
+
+A role or permission alone is not enough to read a particular order. The service
+also compares caller attributes with resource attributes:
+
+- The caller's tenant must match the order's tenant.
+- The caller must own the order, unless they have `orders:read:any`.
+- Read-any still respects the tenant boundary.
+
+Consequently, customer1 can read their own order, customer2 cannot read it,
+and admin1 can read it within tenant `demo`. Admin1 cannot read an order belonging
+to tenant `other`. These checks live downstream because that service owns the
+order data required to make the decision.
+
+For the full endpoint policies, see
+[Authentication and Authorization at Microservice](../security/Authentication%20and%20Authorization%20at%20Microservice.md).
+
+## 8. Return the response through the gateway
+
+When authorization succeeds, the service executes the operation and returns its
+response to the gateway, which returns it to the browser. A rejection stops the
+operation at the component performing that check.
+
+| Result | Typical meaning in this flow |
+| --- | --- |
+| `200` / `201` / `202` | Request succeeded, created a resource, or was accepted |
+| `401` | Missing or invalid JWT at the gateway; missing identity on a direct downstream call |
+| `403` | Required identity claims are invalid, or a role, permission, ownership or tenant check failed |
+| `404` | The requested resource does not exist |
+| `502` / `503` | A downstream call or machine-token acquisition failed |
+
+For example, an absent token is rejected at the gateway with **401** before
+order-service handles the request. A valid customer token calling the admin
+endpoint reaches order-service and is rejected there with **403**.
+
+## 9. Call another microservice through the gateway
+
+Sometimes a downstream operation needs another service. For example, the user
+calls `/api/orders/{id}/inventory/SKU-1`. After order-service verifies access to
+that order, it makes a second HTTP request as its own service account.
+
+**Client credentials** is the OAuth flow for this machine identity. Order-service
+sends its client ID and secret to Keycloak, receives an access token, and sends
+that token to the gateway. The gateway repeats the same validation, header
+replacement and routing steps described above.
+
+```mermaid
+sequenceDiagram
+    participant Order as Order service
+    participant KC as Keycloak
+    participant GW as API Gateway
+    participant Inventory as Inventory service
+    Order->>KC: Client credentials (order-service ID + secret)
+    KC-->>Order: Service-account access token
+    Order->>GW: GET /api/inventory/SKU-1 + Bearer token
+    GW->>GW: Validate JWT and derive fresh headers
+    GW->>Inventory: X-Auth-Username=service-account-order-service
+    Inventory->>Inventory: Require inventory:read
+    Inventory-->>GW: Inventory result
+    GW-->>Order: Inventory result
+```
+
+Order-service first checks the original user's ownership/tenant for the order.
+Only then does it use its own machine credential. It does not copy the original
+user's headers into the machine call. The downstream inventory service sees the
+service identity, not the original user. This is client credentials, not token
+relay or user delegation.
+
+Payment-service's existing order lookup now also travels through the gateway
+using payment-service's token. Both HTTP clients use bounded timeouts and cache
+service tokens until shortly before expiry. Secrets are sent only to Keycloak,
+never as credentials to another application service.
+
+All implemented synchronous HTTP calls use the gateway. Existing asynchronous
+`payment-completed` Kafka messages still go through Kafka; they are not HTTP
+calls and do not carry these headers. A Kafka listener's trusted processing is
+separate from HTTP endpoint authorization.
+
+## Manual verification — IntelliJ local profile
+
+### 1. Test prerequisites
+
+This guide covers security concepts, implementation and verification. Install
+infrastructure and configure Keycloak using the
+[Keycloak setup guide](../infra-setup/keycloak-setup.md) and the other
+[infrastructure setup guides](../infra-setup/README.md). User creation, passwords,
+client secrets, role assignments and redirect URI configuration belong there.
+
+For manual testing, use a browser and a terminal with curl; Python 3 is needed
+for the machine-token example and automated checks. Postman is optional.
+Run the separate [React frontend](../../ecom-ui/README.md) on port 5173.
+The gateway no longer contains static demo HTML or JavaScript.
+
+Before testing, shared infrastructure must be running and the following
+applications must be running in IntelliJ with JDK 17 and profile `local`.
+Minikube and Jenkins are not needed. See the
+[local startup checklist](../infra-setup/keycloak-setup.md#local-startup-checklist-for-security-testing)
+for startup commands and run configuration instructions.
+
+| Application | Port | Used for |
+| --- | --- | --- |
+| `product-service` | 9104 | Product permission examples |
+| `inventory-service` | 9105 | Inventory permission and machine-call tests |
+| `order-service` | 9101 | Identity, RBAC, order ownership and tenant tests |
+| `notification-service` | 9103 | Notification API and Kafka consumer |
+| `payment-service` | 9102 | Payment API, order lookup and Kafka producer |
+| `gateway-service` | 9100 | All API entry points |
+| `ecom-ui` | 5173 | React login and authorization test UI |
+
+Check all six backend applications after IntelliJ shows startup completed.
+Start React using its project guide; the loop below checks the backend only:
+
+```sh
+for port in 9100 9101 9102 9103 9104 9105; do
+  printf '\nService on port %s: ' "$port"
+  curl --fail --silent --show-error "http://localhost:$port/actuator/health"
+done
+```
+
+Expect `"status":"UP"` from each. These direct ports are only used for health
+checks here; send the business API requests below through port **9100**.
+
+### 2. Test URLs and accounts
+
+| Purpose | URL |
+| --- | --- |
+| Browser demo — open this to begin | http://localhost:5173/ |
+| API base URL | http://localhost:9100 |
+| Realm discovery | http://localhost:8180/realms/ecommerce/.well-known/openid-configuration |
+| Authorization endpoint — the demo builds its query parameters | http://localhost:8180/realms/ecommerce/protocol/openid-connect/auth |
+| Token endpoint | http://localhost:8180/realms/ecommerce/protocol/openid-connect/token |
+| Kafka UI — optional for payment events | http://localhost:8089 |
+
+Use the preconfigured accounts `customer1`, `customer2`, `admin1` and
+`othercustomer`. Their passwords, assigned roles and tenants are maintained in
+[Keycloak setup — Application roles and users](../infra-setup/keycloak-setup.md#application-roles-and-users).
+Machine client secrets are maintained in
+[Keycloak setup — Client IDs and secrets](../infra-setup/keycloak-setup.md#client-ids-and-secrets).
+
+Open the exact localhost demo URL above. Its sign-in button generates the
+OAuth state and PKCE values for the public `security-demo-ui` client. You do not
+need to construct the authorization URL manually. These tests use existing
+accounts and client registrations; they do not change Keycloak configuration.
+
+### 3. Customer dashboard and order creation
+
+1. Open **http://localhost:5173/** and click **Sign in to your account**.
+2. Sign in as `customer1`, using the password in the Keycloak setup guide.
+3. Expect a customer dashboard with **My orders**, **Create order**, order counts,
+   recent orders and total order value. **Customers** administration is not shown.
+4. Click **Create order**. The customer username is read-only and set to `customer1`.
+5. Enter `37.50` in **Order amount (USD)** and click **Place order**. The API returns
+   **201** and React opens the new order's detail screen. Save the order ID.
+6. Open **My orders**, search for the ID and click **View details**. Expect **200**
+   for your own order. Use the status filter and pagination to browse other orders.
+7. Reload the detail page: the Keycloak session restores login and the route.
+
+The backend also validates positive order amounts, at most two decimal places,
+and customer username format. The form reflects these rules. Dashboard totals
+are order values, including pending/failed orders, not payment revenue.
+
+### 4. Payment and service-to-service authentication
+
+1. In customer1's pending order detail screen, click **Pay now**.
+2. The browser sends `POST /payments` through the gateway. Expect **201** and a
+   payment receipt. No card information or real money is involved.
+3. Payment-service uses its own client-credentials token to call order-service
+   through the gateway; owner/tenant checks still protect the operation.
+4. Order confirmation is asynchronous via Kafka. Click **Refresh order** to load
+   the server's updated status. Do not assume payment completion and order-status
+   change are simultaneous. A repeat successful payment is rejected with **400**.
+
+Payment-service and Kafka must be available for this test. Notification-service
+can be run to observe its consumer logs. The order-to-inventory machine-call
+example remains available through the API smoke suite; it is not a shopping UI
+feature because the current order model has no product line items.
+
+### 5. Ownership and tenant isolation through real screens
+
+Click **Sign out** before switching accounts. Use the saved order ID in these tests.
+
+| User | Action | Expected result |
+| --- | --- | --- |
+| `customer2` | Open My orders | Customer1's order is absent |
+| `customer2` | Open `http://localhost:5173/#/orders/ORDER_ID` | Order unavailable; backend **403** |
+| `customer2` | Open `http://localhost:5173/#/customers` | Access restricted; no customer data displayed |
+| `admin1` | Search All orders for customer1's order | Visible, with **200** on detail lookup |
+| `othercustomer` | List orders or open customer1's detail URL | Order absent from list; detail **403** |
+
+For the reverse tenant check, create an order as `othercustomer`, then open its
+ID as `admin1`: expect **403**. An admin can read all customers' orders in their
+own tenant; `orders:read:any` never removes the tenant boundary.
+
+### 6. Administrator dashboard and order management
+
+1. Sign in as `admin1`. Expect **Admin dashboard**, **All orders**, **Customers**
+   and **Create order** navigation.
+2. Inspect counts, pending/confirmed summaries, total order value and recent
+   orders across customers in tenant `demo`.
+3. Open **Customers** to see summaries derived from existing orders and links
+   to each customer's orders. This is not a directory of all Keycloak users.
+4. Click **Create order**, enter customer username `customer1`, enter an amount,
+   and click **Place order**. Expect **201**, owned by customer1 in tenant `demo`.
+5. In order details, select a different **Order status** and click **Update status**.
+   Expect **200** and a success message. Supported values are Pending, Confirmed
+   and Failed; the current backend does not impose fulfillment transitions.
+6. Sign in as customer1 and find the admin-created order and updated status.
+   Customers do not see the status-edit form, and a direct customer PATCH is
+   rejected by the backend with **403**.
+
+Admin-created owners must be existing usernames from the setup guide. The order
+API validates username format but does not query Keycloak to confirm existence.
+An order's tenant is always taken from the authenticated caller, never the form.
+
+### 7. Inspect the flow and verify backend protection
+
+Open browser Developer Tools → Network, enable **Preserve log**, then sign in.
+The authorization request contains PKCE S256 and state, the redirect returns a
+code, and the token exchange happens directly with Keycloak. Requests to port
+5173 under `/api` or `/payments` are forwarded by Vite to the gateway on 9100.
+The browser sends a Bearer access token; the gateway adds downstream identity
+headers. Those server-added headers are not visible as browser-sent headers.
+
+For manual curl/Postman API checks, copy the access token from an authenticated
+API request's Authorization header in Developer Tools (omit the `Bearer ` prefix
+when setting the variable below). Tokens are credentials; copied values expire
+independently of React's automatic refresh.
+
+```sh
+ACCESS_TOKEN='PASTE_CUSTOMER1_ACCESS_TOKEN'
+curl -i http://localhost:9100/api/orders/security/me \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H 'X-Auth-Username: admin1' -H 'X-Auth-Roles: admin'
+curl -i http://localhost:9100/api/orders/security/admin \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+unset ACCESS_TOKEN
+curl -i http://localhost:9100/api/orders
+```
+
+Expect customer1's identity with **200** for the spoofed-header request, **403**
+for the customer calling the admin endpoint, and **401** without a token.
+In Postman, use **Authorization → Bearer Token** with the same copied value.
+Machine token acquisition instructions and client secrets are in the
+[Keycloak setup guide](../infra-setup/keycloak-setup.md#request-a-token-curl-or-postman).
+
+### 8. Automated checks and troubleshooting
+
+With the services running, the backend security suite checks JWT validation,
+spoofed headers, endpoint permissions, ownership, tenants and machine calls:
+
+```sh
+python3 docker/keycloak/security-smoke-test.py
+```
+
+The React project's `npm run test:e2e` exercises real customer/admin screens,
+including creation, payments, status updates, SSO, refresh, access-denied pages
+and mobile layout. See [the React project guide](../../ecom-ui/README.md#verification).
+Both suites create persistent learning records.
+
+| Symptom | Check |
+| --- | --- |
+| Login succeeds but workspace does not load | Gateway and order-service must be running with `local` profile |
+| Login redirect is rejected | Use exact URL `http://localhost:5173/` and the current Keycloak setup |
+| Empty customer dashboard | This user may have no orders; create a new order |
+| Other customers' orders are absent | Expected for customers; admins see all owners only within their tenant |
+| Detail shows Order unavailable | Check ID, ownership and tenant; inspect Network for 403 versus 404 |
+| Payment fails | Check payment-service, Kafka and the calling service's Keycloak credentials |
+| Payment succeeded but status is pending | Confirmation is asynchronous; refresh and check Kafka/order consumer logs |
+| Form accepts a request that the backend rejects | Check amount limits, username and permissions; backend remains authoritative |
+| Session expired | Sign in again; an invalid refresh session clears the browser's token |
+
+Installation and application startup belong in the
+[setup guide](../infra-setup/keycloak-setup.md#local-startup-checklist-for-security-testing).
+Detailed screen behavior and current domain limitations are in the
+[React project guide](../../ecom-ui/README.md).

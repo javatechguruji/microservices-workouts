@@ -32,6 +32,7 @@
 	<!-- DEPENDENCIES -->
 	<!-- ================================================= -->
 	<dependencies>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-oauth2-resource-server</artifactId></dependency>
 
 		<!-- Spring Cloud Gateway is reactive (WebFlux/Netty) — do NOT
 		     also add spring-boot-starter-web, the two servlet models

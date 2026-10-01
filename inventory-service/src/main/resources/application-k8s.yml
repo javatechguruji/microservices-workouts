@@ -1,0 +1,14 @@
+# Embedded H2 is temporary staging storage, not a separate database server.
+# The Deployment mounts an emptyDir here; replacing the Pod resets its data.
+spring:
+  datasource:
+    url: jdbc:h2:file:/app/data/inventorydb;DB_CLOSE_DELAY=-1
+  h2:
+    console:
+      enabled: false
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true

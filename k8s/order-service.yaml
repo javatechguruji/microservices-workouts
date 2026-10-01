@@ -20,6 +20,11 @@ spec:
           ports:
             - containerPort: 9101
           env:
+            - name: KEYCLOAK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: service-client-credentials
+                  key: order-service
             - name: POD_IP
               valueFrom:
                 fieldRef:

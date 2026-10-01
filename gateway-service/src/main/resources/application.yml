@@ -14,6 +14,22 @@ spring:
           uri: ${services.order.url}
           predicates:
             - Path=/api/orders/**
+        - id: payment-service
+          uri: ${services.payment.url}
+          predicates:
+            - Path=/payments/**
+        - id: notification-service
+          uri: ${services.notification.url}
+          predicates:
+            - Path=/notifications/**
+        - id: product-service
+          uri: ${services.product.url}
+          predicates:
+            - Path=/api/products/**
+        - id: inventory-service
+          uri: ${services.inventory.url}
+          predicates:
+            - Path=/api/inventory/**
 
 server:
   port: 9100
@@ -27,3 +43,8 @@ management:
 logging:
   level:
     org.springframework.cloud.gateway: DEBUG
+
+security:
+  jwt:
+    issuer: http://localhost:8180/realms/ecommerce
+    audience: gateway-service

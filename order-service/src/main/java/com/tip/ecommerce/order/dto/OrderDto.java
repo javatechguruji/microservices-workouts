@@ -10,6 +10,7 @@ public record OrderDto(
         String customerId,
         BigDecimal amount,
         OrderStatus status,
-        Instant createdAt
+        Instant createdAt,
+        String tenant
 ) {
 }
