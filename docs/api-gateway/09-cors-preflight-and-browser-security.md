@@ -255,9 +255,3 @@ the project's implementation and verification details are covered above.
 > unless a previous preflight result is still cached. It identifies the portal's
 > origin and asks whether the intended method and headers are allowed. The
 > preflight itself does not contain the application's access token.
->
-> Gateway checks the origin against an explicit allowlist, along with the requested
-> method and headers. If they are allowed, it returns the appropriate CORS response
-> headers. The browser can then send the actual request. CORS processing must happen
-> before JWT authentication so that a legitimate preflight is not rejected for
-> having no token. This does not make the business endpoint public.
