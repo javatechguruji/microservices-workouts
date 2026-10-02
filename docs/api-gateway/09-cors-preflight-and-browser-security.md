@@ -3,23 +3,15 @@
 **Topic name:** Cross-Origin Resource Sharing (CORS).  
 **Implemented scenario:** React on `http://localhost:5173` calls API gateway on
 `http://localhost:9100` directly. Gateway handles CORS before JWT authentication.
-Vite serves frontend files only; neither its development nor preview server proxies APIs.
-
 ## 1. Purpose: why does the browser need CORS?
 
 An origin consists of **scheme + hostname + port**. Our UI and gateway have
-different ports, so they are different origins. An origin has no page path:
-`http://localhost:5173` is correct; `http://localhost:5173/customer` is not.
-`localhost` and `127.0.0.1` also identify different origins.
+different ports, so they are different origins.
 
-The browser's same-origin policy restricts JavaScript reading cross-origin
-responses. CORS lets gateway declare which frontend origins may access its API.
-It does not replace authentication, authorization or network restrictions.
-Postman, curl and service clients are not governed by browser CORS enforcement.
+The browser's same-origin policy restricts JavaScript reading response from cross-origin . 
+CORS lets gateway declare which frontend origins may access its API.
+Postman, curl and service clients does not block cross-origin calls,only browser do this.
 
-Previously, Vite forwarded API calls, making browser requests appear same-origin.
-Now the browser connects directly to gateway, exposing the actual API destination
-in DevTools and letting us practise explicit gateway CORS policy.
 
 ## 2. Request flow: preflight, authentication, routing
 
@@ -49,7 +41,7 @@ Preflight results may be cached for up to the configured 600 seconds, subject to
 browser limits. Not seeing OPTIONS before every request is normal. Product image
 GET requests do not carry the API Bearer token and generally do not need preflight.
 
-## 3. React implementation: one explicit gateway destination
+## 3. React implementation: one explicit gateway destination(Optional-UI Only)
 
 In [api.js](../../ecom-ui/src/api.js):
 
