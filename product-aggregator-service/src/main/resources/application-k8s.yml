@@ -1,0 +1,17 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://host.minikube.internal:5432/product-aggregator-service-db
+    username: postgres
+    password: postgres
+  kafka:
+    bootstrap-servers: host.minikube.internal:9094
+services:
+  gateway-url: http://gateway-service:9100
+security:
+  client:
+    id: product-aggregator-service
+    secret: ${KEYCLOAK_CLIENT_SECRET:ZRaZxGAPOI1QpmUUpcQpTmbwFWgJ91C71ckGAFNVl0M}
+    token-uri: http://host.minikube.internal:8180/realms/ecommerce/protocol/openid-connect/token
+
+catalog:
+  images: /app/product-images

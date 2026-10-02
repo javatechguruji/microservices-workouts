@@ -1,34 +1,14 @@
-# Interview Topics — payment-service
+# payment-service: project revision questions
 
-> Scope: this service specifically — payment domain, the synchronous
-> order-existence check, and its role as the sole Kafka producer in
-> [[kafka-workouts]] (see `../docs/kafka-notes.md`).
-> Legend: `[ ]` pending · `[x]` completed
+Use [the implementation guide](../docs/project-docs/shopping-and-fulfillment.md) to answer each question by tracing
+the actual source and an observable outcome. These questions replace older
+checklists that described already-implemented features as pending.
 
-## Domain & Persistence
-- [x] Application skeleton — Spring Boot + JPA + Postgres wired (`payment-srv-db`)
-- [x] Payment entity (orderId, amount, status, createdAt)
-- [ ] Should `Payment` also store the Kafka message ID it published, for outbox-style tracking? (ties to [[kafka-workouts]] P2 — Transactional Outbox)
+1. Why is an identical successful retry returned instead of rejected?
+2. Why does an outbox still require duplicate handling?
+3. What does the service unit test not prove about a database lock?
 
-## REST API Design
-- [x] `POST /payments` — synchronous order-existence check via `OrderServiceClient` before saving
-- [x] `GET /payments/{id}`
-- [ ] What should happen on a failed payment — a distinct `PaymentStatus.FAILED` path is modeled but never triggered yet; wire a real failure rule
-
-## Service-to-Service Calls
-- [x] `OrderServiceClient` — `WebClient` (blocking, `.block()`) call to `order-service`, 404 mapped to a clear error. Used as a plain HTTP client, not a reactive chain — this service's persistence (JPA) is still blocking.
-- [ ] What replaces this if `order-service` is briefly down — retry? circuit breaker? (Resilience4j)
-- [ ] Compare this synchronous check against making the whole "does this order exist" question itself event-driven instead
-
-## Kafka — This Is the Producer
-- [x] Publish `payment-completed` after a successful save — see `PaymentServiceImpl.processPayment()`
-- [x] Same event, `status` field distinguishes SUCCESS/FAILED (matches the console-producer example in `docs/kafka-notes.md`) — vs. a separate `payment-failed` topic. Trade-offs?
-- [ ] Transactional Outbox — write the event to a local table in the same transaction as the payment, relay separately (`docs/kafka-notes.md` P2). Currently a **direct** publish — a crash between the DB save and the Kafka send can still drop the event; known, accepted gap.
-- [x] Idempotent producer config (`enable.idempotence=true`, `acks=all`)
-- [x] Batching/timeout/retry tuning — `batch-size`, `linger.ms`, `request.timeout.ms`/`delivery.timeout.ms`/`max.block.ms`, `retry.backoff.ms`, `compression-type`, `client-id` (`docs/kafka-notes.md` P5) — verified against the broker's own logged effective config, not just that the YAML parses
-- [ ] `transactional.id` / Kafka transactions — the level beyond idempotence (atomic multi-send), not needed yet since this service only ever sends one event per payment (`docs/kafka-notes.md` P5)
-
-## Testing
-- [ ] `@DataJpaTest` for `PaymentRepository`
-- [ ] Mock `OrderServiceClient` (`@MockBean`) to test the "order not found" 404 path without a real order-service running
-- [ ] Embedded Kafka test verifying the event is actually published on success
+Compare the implementation with its stated limitations. Future work is maintained
+once in [the project roadmap](../Topics.md); a discussion topic is not proof
+that the feature exists. For a runnable exercise use
+[manual verification](../docs/project-docs/manual-verification.md).

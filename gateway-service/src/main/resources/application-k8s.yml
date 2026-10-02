@@ -6,10 +6,29 @@ services:
   notification:
     url: http://notification-service:9103
   product:
-    url: http://product-service:9104
+    url: http://product-aggregator-service:9104
   inventory:
     url: http://inventory-service:9105
 
+  customer:
+    url: http://customer-service:9106
+  product-discount:
+    url: http://product-discount-service:9107
+  rating:
+    url: http://rating-service:9108
+
 security:
+  cors:
+    # The POC UI still runs locally; override with the stage UI origin when deployed.
+    # Override with exact comma-separated origins, without paths or trailing slashes.
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
   jwt:
+    # Must match the iss claim in tokens issued by the shared Keycloak realm.
+    issuer: http://localhost:8180/realms/ecommerce
+    audience: gateway-service
+    # Pods fetch public keys through the host address; the token issuer stays unchanged.
     jwk-set-uri: http://host.minikube.internal:8180/realms/ecommerce/protocol/openid-connect/certs
+
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO

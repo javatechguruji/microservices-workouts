@@ -1,87 +1,75 @@
-# Shared infrastructure setup
+# Setup and configuration
 
-These guides describe the existing `shared-infra` project in
-[the root Compose file](../../docker-compose.yml), checked September 30, 2026.
-These guides document setup and usage. Redis and Keycloak were installed and
-verified as part of their setup tasks; application deployment remains separate.
+Use this section to prepare the environment. Use the [learning index](../README.md)
+for concepts, code excerpts and business verification.
 
-| Component | Guide | IntelliJ / host connection | Minikube connection |
-| --- | --- | --- | --- |
-| Postgres | [Setup and JPA example](postgres-setup.md) | `localhost:5432` | `host.minikube.internal:5432` |
-| Kafka | [Setup and payment events](kafka-setup.md) | `localhost:9092` | `host.minikube.internal:9094` |
-| Kafka UI | [Setup and event inspection](kafka-ui-setup.md) | Browser: `http://localhost:8089` | Applications do not connect to the UI |
-| Keycloak | [Setup and client credentials](keycloak-setup.md) | `http://localhost:8180` | `http://host.minikube.internal:8180` (backchannel) |
-| Redis | [Setup and Spring Data example](redis-setup.md) | `localhost:6379` | `host.minikube.internal:6379` |
+## Deployment model
 
-## Architecture
+The root [docker-compose.yml](../../docker-compose.yml) owns **shared-infra**:
+PostgreSQL, Kafka, Kafka UI, Redis and Keycloak only. Run applications in IntelliJ
+with `local`. Future Jenkins deployments use `k8s` in Minikube and the **same**
+infrastructure instances. There are no infrastructure servers in `k8s/`.
 
-Docker Compose runs infrastructure only. Start microservices in IntelliJ with
-`local`; later Jenkins will deploy the application manifests in `k8s/` to
-Minikube with `k8s`. Both environments share these infrastructure instances.
-Application Secrets in Kubernetes provide connection credentials; they do not
-deploy infrastructure servers there.
+| Component    | Guide                                                      | Local connection             | Minikube connection                                |
+| ------------ | ---------------------------------------------------------- | ---------------------------- | -------------------------------------------------- |
+| PostgreSQL   | [Setup](postgres-setup.md)                                 | localhost:5432               | host.minikube.internal:5432                        |
+| Kafka        | [Setup](kafka-setup.md)                                    | localhost:9092               | host.minikube.internal:9094                        |
+| Kafka UI     | [Setup](kafka-ui-setup.md)                                 | http://localhost:8089        | Browser tool, not an application dependency        |
+| Keycloak     | [Setup and credentials](keycloak-setup.md)                 | http://localhost:8180        | http://host.minikube.internal:8180 for backchannel |
+| Redis        | [Setup and password](redis-setup.md)                       | localhost:6379               | host.minikube.internal:6379                        |
+| Applications | [IntelliJ, frontend and database setup](commerce-setup.md) | Nine Java services and React | [Future Jenkins/Minikube setup](minikube-setup.md) |
 
-MongoDB and Prometheus are mentioned as future additions but are not configured
-Compose services. H2 is embedded in product/inventory and is not a separate
-infrastructure container.
+## First startup or existing-volume upgrade
 
-## First setup
+Prerequisites: Docker Desktop running, Docker Compose CLI, Python 3. Execute from
+the repository root. No host installation of PostgreSQL/Kafka/Redis is required.
 
-Prerequisite: Docker Desktop is installed. All shell commands in these guides
-run from the repository root unless a different location is explicitly given.
-
-```bash
-cd /Users/haneefnoorbasha/Workouts/microservices-workouts
-open -a Docker
-# Wait for Docker Desktop to start.
+```sh
 docker info
-
-# Required because these volumes are declared external in Compose.
 docker volume create workouts-postgres-data
 docker volume create workouts-kafka-data
-
 docker compose config --quiet
+docker compose up -d postgres
+docker compose exec -T postgres pg_isready -U postgres -d postgres
+```
+
+Wait until PostgreSQL accepts connections, then:
+
+```sh
+python3 docker/postgres/ensure-databases.py
 docker compose up -d
 docker compose ps
+curl --fail http://localhost:8180/realms/ecommerce/.well-known/openid-configuration
 ```
 
-`up` pulls missing images. The Redis volume is created automatically. Existing
-named volumes are reused. A running container is not necessarily ready: use the
-component-specific readiness commands before starting applications. Redis and Keycloak have Compose health checks; Postgres and Kafka currently do not.
+Wait/retry discovery until Keycloak is ready, then:
 
-When adding Keycloak to an existing Postgres volume, first create its database
-as described in the [Keycloak guide](keycloak-setup.md#installation-and-database-initialization).
-
-For an existing installation, normally only `docker compose up -d` is needed.
-Use `docker compose pull SERVICE` only when intentionally updating that image;
-`postgres:16`, `redis:8-alpine`, and Kafka UI's `latest` are moving tags.
-
-## Configuration and data
-
-- The root Compose file is the runtime configuration source of truth.
-- [Postgres initialization](../../docker/postgres/init-databases.sql) creates
-  application databases only for a fresh data directory.
-- Named volumes store data; these Markdown files do not.
-- The same database names, Redis database, and Kafka topics are shared between
-  local and staging. Running both simultaneously can affect the same data.
-  Kafka consumers with the same group ID also share work across environments.
-- Published ports are for trusted local learning. Credentials documented here
-  are development credentials. Kafka and Kafka UI currently have no login/TLS.
-
-## Routine operations
-
-```bash
-docker compose logs --tail=100
-docker compose stop kafka-ui
-# Starts the UI and its Kafka dependency if needed.
-docker compose up -d kafka-ui
+```sh
+python3 docker/keycloak/configure-security.py
+python3 docker/keycloak/verify-clients.py
 ```
 
-Stop an individual component by naming it. `docker compose down` stops the whole
-shared stack. Avoid `down -v` or volume deletion as a troubleshooting shortcut:
-Redis data can be removed, and manually deleting any database volume loses data.
+Follow [Kafka setup](kafka-setup.md) to verify readiness and create both topics,
+then [application setup](commerce-setup.md). PostgreSQL/Kafka external volumes must
+exist before first startup. Redis's volume is created by Compose. Existing data
+is reused; initialization SQL alone does not update an already initialized volume.
+The database helper creates missing databases and applies the guarded order-status
+constraint migration without dropping records.
 
-The examples describe expected results. Redis was smoke-tested during its prior
-installation; new database/message examples are instructions, not actions
-performed while writing these guides. Minikube access must be checked when the
-cluster is running. Jenkins deployment automation is still future work.
+## Routine use and persistence
+
+For an initialized workspace, `docker compose up -d` starts infrastructure. A
+running container is not always ready; use each guide's readiness check.
+`docker compose logs --tail=100 SERVICE` helps diagnose startup.
+
+Both application profiles share database names, Kafka topics/groups and Redis keys.
+Running local and stage simultaneously can affect the same data and split consumer
+work. Named volumes survive ordinary container recreation; they are not backups.
+Do not delete volumes to fix missing databases or stale realm configuration.
+
+Credentials here are intentionally documented learning credentials. Kafka/Kafka UI
+have no authentication/TLS, and the published ports serve the trusted local setup.
+Mutable image tags can change after an explicit pull; current runtime versions
+must be inspected rather than inferred from historical installation notes.
+
+- [IntelliJ and Maven workspace setup](intellij-maven-setup.md): import all services, choose JDK 17 and run the correctly named application classes.

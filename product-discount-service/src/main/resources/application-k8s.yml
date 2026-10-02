@@ -1,0 +1,14 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://host.minikube.internal:5432/product-discount-service-db
+    username: postgres
+    password: postgres
+  kafka:
+    bootstrap-servers: host.minikube.internal:9094
+services:
+  gateway-url: http://gateway-service:9100
+security:
+  client:
+    id: product-discount-service
+    secret: ${KEYCLOAK_CLIENT_SECRET:Workouts-product-discount-service-2026!}
+    token-uri: http://host.minikube.internal:8180/realms/ecommerce/protocol/openid-connect/token

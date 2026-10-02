@@ -20,3 +20,7 @@ security:
     id: order-service
     secret: ${KEYCLOAK_CLIENT_SECRET:}
     token-uri: http://host.minikube.internal:8180/realms/ecommerce/protocol/openid-connect/token
+
+documentation:
+  # Browser-facing gateway address, not internal Kubernetes service DNS.
+  gateway-url: ${PUBLIC_GATEWAY_URL:http://localhost:9100}

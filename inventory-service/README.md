@@ -1,39 +1,14 @@
 # inventory-service
 
-Inventory/stock microservice — part of the [microservices-workouts](../README.md) e-commerce system. Runs on port 9105.
+PostgreSQL stock, atomic multi-item reservation and idempotent commit/release.
 
+- [Concept, scenario, code and flow](../docs/project-docs/shopping-and-fulfillment.md)
+- [Main implementation](src/main/java/com/tip/ecommerce/inventory/controller/InventoryController.java)
+- [Application configuration](src/main/resources/application.yml)
+- [Startup, profiles, ports and tests](../docs/infra-setup/commerce-setup.md)
+- [Required services per flow](../docs/project-docs/business-flows-and-service-dependencies.md)
+- [Client credentials and permissions](../docs/infra-setup/keycloak-setup.md)
 
-## Local and staging execution
-
-Run the application in IntelliJ with profile `local` (the default), or run
-`mvn spring-boot:run -Dspring-boot.run.profiles=local` in this directory.
-Local H2 data remains in `./data/inventorydb` relative to the working directory.
-
-The multi-stage `Dockerfile` builds with Java 17 and exposes port 9105.
-From the repository root, the future Jenkins build step can use:
-
-```bash
-docker build -t inventory-service:stage1 ./inventory-service
-```
-
-Jenkins should run tests before the image build, replace the example tag with
-an immutable version, and deploy [the application manifest](../k8s/inventory-service.yaml).
-The manifest selects `k8s`, exposes a ClusterIP Service at `inventory-service:9105`,
-and configures startup, readiness, and liveness probes using Actuator.
-No application container is added to Docker Compose.
-
-Staging currently retains embedded H2 in a Pod `emptyDir`: data survives a
-container restart in the same Pod but is lost when the Pod is replaced,
-including during deployment. Keep one replica. `Recreate` avoids overlapping
-old and new Pods with independent databases during rollout, at the cost of
-downtime. The H2 console is disabled in `k8s`. External persistent storage is
-a separate future change; this manifest does not deploy a database server.
-
-
-## Security
-
-Call application APIs through the gateway on port 9100 with a Keycloak access
-token. The gateway validates JWTs and derives trusted `X-Auth-*` headers;
-downstream controllers enforce roles, permissions and resource policies.
-See [authentication and authorization](../docs/security/Authentication%20and%20Authorization%20at%20Microservice.md)
-for browser login, machine calls and direct-header POC testing.
+Run locally with IntelliJ; future deployment goes through Jenkins. This service is
+not a Docker Compose workload. Consult the concept guide for implemented behavior
+and limitations rather than treating the realm's permission names as an endpoint list.

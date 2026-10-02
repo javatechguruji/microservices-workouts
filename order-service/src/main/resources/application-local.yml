@@ -9,7 +9,7 @@ spring:
   kafka:
     bootstrap-servers: localhost:9092
 
-# order-service calls product-service and inventory-service directly by
+# order-service calls product-aggregator-service and inventory-service directly by
 # hostname:port here; in Kubernetes these become the Service DNS names
 # instead of hardcoded localhost URLs (see application-k8s.yml).
 # HTTP service calls always return through the gateway.
@@ -21,3 +21,7 @@ security:
     id: order-service
     secret: ${KEYCLOAK_CLIENT_SECRET:LBOkQHGD24s1Wg7L7Bl4iul03PWxgZ0p7oNR-LMmIQ4}
     token-uri: http://localhost:8180/realms/ecommerce/protocol/openid-connect/token
+
+documentation:
+  # Browser-facing gateway address, not internal Kubernetes service DNS.
+  gateway-url: ${PUBLIC_GATEWAY_URL:http://localhost:9100}

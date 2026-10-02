@@ -2,5 +2,12 @@
 # Kafka reached via docker-compose's port mapping on localhost — run
 # `docker compose up -d` from the repo root first.
 spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/notification-service-db
+    username: postgres
+    password: postgres
+  sql:
+    init:
+      mode: always
   kafka:
     bootstrap-servers: localhost:9092

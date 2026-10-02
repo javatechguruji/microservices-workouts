@@ -24,7 +24,7 @@
 	<!-- ================================================= -->
 	<properties>
 		<java.version>17</java.version>
-		<lombok.version>1.18.34</lombok.version>
+		<lombok.version>1.18.42</lombok.version>
 	</properties>
 
 	<!-- ================================================= -->
@@ -50,8 +50,8 @@
 
 		<!-- H2 Database -->
 		<dependency>
-			<groupId>com.h2database</groupId>
-			<artifactId>h2</artifactId>
+			<groupId>org.postgresql</groupId>
+			<artifactId>postgresql</artifactId>
 			<scope>runtime</scope>
 		</dependency>
 

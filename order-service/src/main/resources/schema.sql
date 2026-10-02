@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS checkout (order_id bigint PRIMARY KEY REFERENCES orders(id), tenant varchar(80) NOT NULL, customer_id varchar(200) NOT NULL, idempotency_key varchar(80) NOT NULL, request_hash text NOT NULL, state varchar(30) NOT NULL, address text NOT NULL, error text, attempts integer NOT NULL DEFAULT 0, next_attempt timestamptz NOT NULL DEFAULT now(), tracking varchar(100), UNIQUE(tenant,customer_id,idempotency_key));
+CREATE TABLE IF NOT EXISTS order_item (id bigserial PRIMARY KEY, order_id bigint NOT NULL REFERENCES orders(id), sku varchar(50), name varchar(200), category varchar(80), quantity integer NOT NULL CHECK(quantity>0), original_price numeric(12,2), unit_price numeric(12,2), subtotal numeric(12,2));
+CREATE TABLE IF NOT EXISTS commerce_outbox (event_id varchar(100) PRIMARY KEY, order_id bigint NOT NULL, payload text NOT NULL, published boolean NOT NULL DEFAULT false);
+

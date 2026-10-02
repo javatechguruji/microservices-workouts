@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { gatewayRequest, validateRequest } from './api.js';
+import { gatewayRequest, validateRequest, gatewayUrl } from './api.js';
 
 test('rejects external and traversal paths before accessing a token', async () => {
   for (const path of [
@@ -27,7 +27,8 @@ test('uses refreshed access token and forwards intentional spoof headers for gat
     },
     fetcher: async (path, options) => {
       assert.ok(refreshed);
-      assert.equal(path, '/api/orders/security/me');
+      assert.equal(path, 'http://localhost:9100/api/orders/security/me');
+      assert.equal(options.credentials, 'omit');
       assert.equal(options.headers.Authorization, 'Bearer refreshed-token');
       assert.equal(options.headers['X-Auth-Username'], 'admin1');
       assert.equal(options.redirect, 'error');
@@ -45,4 +46,12 @@ test('preserves denied responses instead of presenting authorization failures as
   assert.equal(result.status, 403);
   assert.equal(result.ok, false);
   assert.equal(result.data, 'Forbidden');
+});
+
+test('product images use gateway and external destinations are rejected', () => {
+  assert.equal(
+    gatewayUrl('/api/products/images/book.svg'),
+    'http://localhost:9100/api/products/images/book.svg'
+  );
+  assert.throws(() => gatewayUrl('https://evil.test/image.svg'));
 });

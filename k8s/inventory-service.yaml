@@ -4,7 +4,6 @@ metadata:
   name: inventory-service
   namespace: ecommerce
 spec:
-  # H2 is private to this Pod; do not scale until external storage is configured.
   replicas: 1
   strategy:
     type: Recreate
@@ -25,9 +24,6 @@ spec:
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: k8s
-          volumeMounts:
-            - name: app-data
-              mountPath: /app/data
           startupProbe:
             httpGet:
               path: /actuator/health/liveness
@@ -46,9 +42,6 @@ spec:
               port: 9105
             initialDelaySeconds: 20
             periodSeconds: 10
-      volumes:
-        - name: app-data
-          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

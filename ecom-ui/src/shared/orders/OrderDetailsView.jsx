@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { request, money, date } from '../../orders';
+import FulfillmentPanel from './FulfillmentPanel';
 import { Status } from './OrdersTable';
 import { useOrders } from './OrdersProvider';
 
@@ -106,7 +107,11 @@ export default function OrderDetailsView({ id, ordersPath, children }) {
                     </div>
                   </dl>
                 </section>
-                <aside className="stack">{children({ order, onChanged: updateOrder })}</aside>
+                <aside className="stack">
+                  <FulfillmentPanel order={order} onChanged={updateOrder}>
+                    {children({ order, onChanged: updateOrder })}
+                  </FulfillmentPanel>
+                </aside>
               </div>
             </>
           )}

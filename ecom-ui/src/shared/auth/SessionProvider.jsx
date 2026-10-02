@@ -50,6 +50,13 @@ export function SessionProvider({ children }) {
       setError(e.message);
     }
   }
+  async function register() {
+    try {
+      await auth.register({ redirectUri });
+    } catch (e) {
+      setError(e.message);
+    }
+  }
   async function logout() {
     try {
       await auth.logout({ redirectUri });
@@ -65,6 +72,7 @@ export function SessionProvider({ children }) {
         loading,
         error,
         login,
+        register,
         logout,
         retry: () => setVersion((v) => v + 1),
       }}

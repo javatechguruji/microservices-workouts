@@ -1,4 +1,4 @@
-"""Real PKCE + gateway security checks. Requires six local apps and Keycloak.
+"""Real PKCE + gateway security checks. Requires nine local apps and Keycloak.
 Creates learning orders/payments; does not delete data. No tokens are printed.
 """
 import base64
@@ -8,6 +8,7 @@ import http.cookiejar
 import json
 from pathlib import Path
 import secrets
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -80,6 +81,9 @@ def expect(code,result,label):
 
 if __name__=='__main__':
     tokens={u:login(u) for u in ['customer1','customer2','admin1','othercustomer']}
+    if '--login-only' in sys.argv:
+        print('Verified Keycloak browser-flow login for customer1, customer2, admin1 and othercustomer; no tokens printed.')
+        sys.exit(0)
     c1=tokens['customer1']['access_token'];c2=tokens['customer2']['access_token'];admin=tokens['admin1']['access_token']
     expect(401,call('/api/orders/security/me'),'missing JWT')
     expect(401,call('/api/orders/security/me',headers={'X-Auth-Subject':'x','X-Auth-Username':'admin1','X-Auth-Tenant':'demo','X-Auth-Roles':'admin'}),'headers cannot replace gateway authentication')
@@ -97,13 +101,12 @@ if __name__=='__main__':
     expect(200,call('/api/orders/'+str(oid),admin),'same-tenant admin read-any')
     other=expect(201,call('/api/orders',tokens['othercustomer']['access_token'],'POST',{'customerId':'othercustomer','amount':25}),'other tenant create')
     expect(403,call('/api/orders/'+str(other['id']),admin),'admin cannot cross tenant')
-    expect(200,call('/api/products/SKU-1',c1),'customer product read')
-    expect(403,call('/api/inventory/SKU-1',c1),'customer lacks inventory permission')
-    result=expect(200,call('/api/orders/'+str(oid)+'/inventory/SKU-1',c1),'order uses own machine token through gateway')
+    expect(200,call('/api/products',c1),'customer product read')
+    expect(403,call('/api/inventory/ELEC-1',c1),'customer lacks inventory permission')
+    result=expect(200,call('/api/orders/'+str(oid)+'/inventory/ELEC-1',c1),'order uses own machine token through gateway')
     assert result['inventory']['calledAs']=='service-account-order-service',result
-    expect(403,call('/api/orders/'+str(oid)+'/inventory/SKU-1',c2),'ownership checked before machine call')
-    expect(403,call('/api/inventory/SKU-1/adjust',c1,'POST',{}),'customer inventory adjustment denied')
-    expect(200,call('/api/inventory/SKU-1/adjust',admin,'POST',{}),'admin inventory permission and role')
+    expect(403,call('/api/orders/'+str(oid)+'/inventory/ELEC-1',c2),'ownership checked before machine call')
+    expect(403,call('/api/inventory/reservations',c1,'POST',{}),'customer inventory reservation denied')
     payment=expect(201,call('/payments',c1,'POST',{'orderId':oid,'amount':25}),'payment checks order via gateway machine token')
     expect(403,call('/payments/'+str(payment['id']),c2),'payment owner restriction')
     expect(200,call('/payments/'+str(payment['id']),admin),'admin payment read-any')

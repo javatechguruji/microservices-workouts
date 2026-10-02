@@ -39,11 +39,13 @@ export default function OrderStatusEditor({ order, onChanged }) {
         <form onSubmit={updateStatus}>
           <label htmlFor="order-status">Order status</label>
           <select id="order-status" value={status} onChange={(e) => setStatus(e.target.value)}>
-            {statuses.map((s) => (
-              <option key={s} value={s}>
-                {label(s)}
-              </option>
-            ))}
+            {statuses
+              .filter((s) => !['SHIPPED', 'DELIVERED'].includes(s))
+              .map((s) => (
+                <option key={s} value={s}>
+                  {label(s)}
+                </option>
+              ))}
           </select>
           <button disabled={busy || status === order.status}>Update status</button>
         </form>

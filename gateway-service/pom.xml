@@ -39,7 +39,7 @@
 		     conflict. -->
 		<dependency>
 			<groupId>org.springframework.cloud</groupId>
-			<artifactId>spring-cloud-starter-gateway</artifactId>
+			<artifactId>spring-cloud-starter-gateway-server-webflux</artifactId>
 		</dependency>
 
 		<!-- Testing (JUnit 5, Spring Test, AssertJ, Mockito) -->

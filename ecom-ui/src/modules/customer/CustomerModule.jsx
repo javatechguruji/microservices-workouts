@@ -1,7 +1,10 @@
 import CustomerLayout from './CustomerLayout';
-import CustomerDashboardPage from './pages/CustomerDashboardPage';
+import ShopPage from './pages/ShopPage';
+import CartPage from './pages/CartPage';
+import ProfilePage from './pages/ProfilePage';
+import NotificationsPage from './pages/NotificationsPage';
+import { CartProvider } from './shopping/CartProvider';
 import MyOrdersPage from './pages/MyOrdersPage';
-import CreateOrderPage from './pages/CreateOrderPage';
 import OrderDetailsPage from './pages/OrderDetailsPage';
 
 import { useSession } from '../../shared/auth/SessionProvider';
@@ -12,15 +15,22 @@ export default function CustomerModule({ route }) {
   const path = route.split('?')[0];
   const detail = path.match(/^\/customer\/orders\/(\d+)$/);
   let page;
-  if (path === '/customer/dashboard') page = <CustomerDashboardPage />;
+  if (path === '/customer/dashboard') page = <ShopPage />;
+  else if (path === '/customer/cart') page = <CartPage />;
+  else if (path === '/customer/profile') page = <ProfilePage />;
+  else if (path === '/customer/notifications') page = <NotificationsPage />;
   else if (path === '/customer/orders') page = <MyOrdersPage />;
   else if (path === '/customer/orders/new')
     page = identity.permissions.includes('orders:create') ? (
-      <CreateOrderPage />
+      <ShopPage />
     ) : (
       <AccessDenied homePath="/customer/dashboard" />
     );
   else if (detail) page = <OrderDetailsPage key={detail[1]} id={detail[1]} />;
   else page = <NotFound homePath="/customer/dashboard" />;
-  return <CustomerLayout route={route}>{page}</CustomerLayout>;
+  return (
+    <CartProvider>
+      <CustomerLayout route={route}>{page}</CustomerLayout>
+    </CartProvider>
+  );
 }

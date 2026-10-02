@@ -5,82 +5,93 @@ import com.tip.ecommerce.payment.dto.CreatePaymentRequest;
 import com.tip.ecommerce.payment.dto.PaymentDto;
 import com.tip.ecommerce.payment.entity.Payment;
 import com.tip.ecommerce.payment.entity.PaymentStatus;
-import com.tip.ecommerce.payment.event.PaymentCompletedEvent;
 import com.tip.ecommerce.payment.repository.PaymentRepository;
 import com.tip.ecommerce.payment.service.PaymentService;
+import java.math.BigDecimal;
+import java.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
-
-import java.math.BigDecimal;
-import java.time.Instant;
 
 @Service
 public class PaymentServiceImpl implements PaymentService {
 
-    private static final String TOPIC = "payment-completed";
-    private static final Logger log = LoggerFactory.getLogger(PaymentServiceImpl.class);
+  private static final String TOPIC = "payment-completed";
+  private static final Logger log = LoggerFactory.getLogger(PaymentServiceImpl.class);
 
-    private final PaymentRepository paymentRepository;
-    private final OrderServiceClient orderServiceClient;
-    private final KafkaTemplate<String, PaymentCompletedEvent> kafkaTemplate;
+  private final PaymentRepository paymentRepository;
+  private final OrderServiceClient orderServiceClient;
+  private final org.springframework.jdbc.core.JdbcTemplate db;
 
-    public PaymentServiceImpl(PaymentRepository paymentRepository,
-                               OrderServiceClient orderServiceClient,
-                               KafkaTemplate<String, PaymentCompletedEvent> kafkaTemplate) {
-        this.paymentRepository = paymentRepository;
-        this.orderServiceClient = orderServiceClient;
-        this.kafkaTemplate = kafkaTemplate;
+  public PaymentServiceImpl(
+      PaymentRepository paymentRepository,
+      OrderServiceClient orderServiceClient,
+      org.springframework.jdbc.core.JdbcTemplate db) {
+    this.paymentRepository = paymentRepository;
+    this.orderServiceClient = orderServiceClient;
+    this.db = db;
+  }
+
+  @Override
+  @org.springframework.transaction.annotation.Transactional
+  public PaymentDto processPayment(CreatePaymentRequest request) {
+    if (request.amount() == null || request.amount().compareTo(BigDecimal.ZERO) <= 0) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "amount must be greater than zero");
     }
 
-    @Override
-    public PaymentDto processPayment(CreatePaymentRequest request) {
-        if (request.amount() == null || request.amount().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "amount must be greater than zero");
-        }
-
-        paymentRepository.findByOrderIdAndStatus(request.orderId(),PaymentStatus.SUCCESS)
-                .ifPresent((p)->{
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Payment Already Exist for this order");
-                });
-        // Blocks payment for an order that doesn't exist — the REST
-        // enforcement of "you must create an order before you can pay".
-        orderServiceClient.getOrder(request.orderId());
-
-        Payment payment = new Payment();
-        payment.setOrderId(request.orderId());
-        payment.setAmount(request.amount());
-        payment.setStatus(PaymentStatus.SUCCESS);
-        payment.setCreatedAt(Instant.now());
-        payment = paymentRepository.save(payment);
-
-        // Direct publish, not the transactional outbox pattern (see
-        // docs/kafka-notes.md P2) — the DB write and the publish are two
-        // separate operations, so a crash between them can drop the event.
-        // Fine for this exercise; the outbox pattern is the real fix.
-        Long orderId = payment.getOrderId();
-        PaymentCompletedEvent event = new PaymentCompletedEvent(orderId, payment.getId(), payment.getStatus().name());
-        kafkaTemplate.send(TOPIC, String.valueOf(orderId), event)
-                .whenComplete((result, ex) -> {
-                    if (ex != null) {
-                        log.error("Failed to publish {} for order {}", TOPIC, orderId, ex);
-                    }
-                });
-
-        return toDto(payment);
+    // Database lock serializes duplicate calls across instances. A lost response is safe to retry.
+    if (request.orderId() == null)
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Order required");
+    db.queryForObject("SELECT pg_advisory_xact_lock(?)", Object.class, request.orderId());
+    var previous =
+        paymentRepository.findByOrderIdAndStatus(request.orderId(), PaymentStatus.SUCCESS);
+    if (previous.isPresent()) {
+      if (previous.get().getAmount().compareTo(request.amount()) != 0)
+        throw new ResponseStatusException(HttpStatus.CONFLICT, "Payment amount differs");
+      return toDto(previous.get());
     }
+    var order = orderServiceClient.getOrder(request.orderId());
+    if (!"PENDING".equals(order.status())
+        || order.amount() == null
+        || order.amount().compareTo(request.amount()) != 0)
+      throw new ResponseStatusException(
+          HttpStatus.CONFLICT, "Payment must match the pending order total");
 
-    @Override
-    public PaymentDto getPayment(Long id) {
-        Payment payment = paymentRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Payment " + id + " not found"));
-        return toDto(payment);
-    }
+    Payment payment = new Payment();
+    payment.setOrderId(request.orderId());
+    payment.setAmount(request.amount());
+    payment.setStatus(PaymentStatus.SUCCESS);
+    payment.setCreatedAt(Instant.now());
+    payment = paymentRepository.save(payment);
 
-    private PaymentDto toDto(Payment payment) {
-        return new PaymentDto(payment.getId(), payment.getOrderId(), payment.getAmount(), payment.getStatus(), payment.getCreatedAt());
-    }
+    db.update(
+        "INSERT INTO payment_outbox(order_id,payment_id) VALUES (?,?) ON CONFLICT DO NOTHING",
+        payment.getOrderId(),
+        payment.getId());
+
+    return toDto(payment);
+  }
+
+  @Override
+  public PaymentDto getPayment(Long id) {
+    Payment payment =
+        paymentRepository
+            .findById(id)
+            .orElseThrow(
+                () ->
+                    new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Payment " + id + " not found"));
+    return toDto(payment);
+  }
+
+  private PaymentDto toDto(Payment payment) {
+    return new PaymentDto(
+        payment.getId(),
+        payment.getOrderId(),
+        payment.getAmount(),
+        payment.getStatus(),
+        payment.getCreatedAt());
+  }
 }

@@ -20,6 +20,7 @@ export async function request(path, method = 'GET', data) {
   if (!response.ok) {
     const messages = {
       400: 'The request could not be completed. Check your details. If paying, a successful payment may already exist.',
+      409: 'This action conflicts with the current order state or cart. Refresh and try again.',
       401: 'Your session is no longer valid. Please sign in again.',
       403: 'You do not have access to this order or action.',
       404: 'We could not find this order.',
@@ -38,7 +39,7 @@ export const date = (value) =>
   value
     ? new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
     : '—';
-export const statuses = ['PENDING', 'CONFIRMED', 'FAILED'];
+export const statuses = ['PENDING', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'FAILED'];
 export const label = (status) =>
   status ? status.charAt(0) + status.slice(1).toLowerCase() : 'Unknown';
 export const newest = (orders) =>

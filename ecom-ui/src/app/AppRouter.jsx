@@ -12,7 +12,8 @@ const AdminModule = lazy(() => import('../modules/admin/AdminModule'));
 export default function AppRouter() {
   const route = useRoute();
   const session = useSession();
-  if (!session.signedIn) return <SignInPage login={session.login} error={session.error} />;
+  if (!session.signedIn)
+    return <SignInPage login={session.login} register={session.register} error={session.error} />;
   if (session.loading) return <Loading />;
   if (!session.identity)
     return (

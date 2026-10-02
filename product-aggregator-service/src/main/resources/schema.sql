@@ -1,0 +1,11 @@
+CREATE TABLE IF NOT EXISTS product (sku varchar(50) PRIMARY KEY, name varchar(200), category varchar(80), original_price numeric(12,2) CHECK(original_price>0), image varchar(100));
+INSERT INTO product VALUES ('ELEC-1','Wireless headphones','Electronics',79.00,'ELEC-1.svg') ON CONFLICT DO NOTHING;
+INSERT INTO product VALUES ('ELEC-2','Portable speaker','Electronics',49.00,'ELEC-2.svg') ON CONFLICT DO NOTHING;
+INSERT INTO product VALUES ('GROC-1','Organic pantry basket','Groceries',24.00,'GROC-1.svg') ON CONFLICT DO NOTHING;
+INSERT INTO product VALUES ('GROC-2','Morning coffee beans','Groceries',16.50,'GROC-2.svg') ON CONFLICT DO NOTHING;
+INSERT INTO product VALUES ('HOME-1','Reading lamp','Home',39.00,'HOME-1.svg') ON CONFLICT DO NOTHING;
+INSERT INTO product VALUES ('HOME-2','Cotton throw','Home',29.00,'HOME-2.svg') ON CONFLICT DO NOTHING;
+INSERT INTO product VALUES ('BOOK-1','Everyday cooking','Books',22.00,'BOOK-1.svg') ON CONFLICT DO NOTHING;
+INSERT INTO product VALUES ('BOOK-2','A curious mind','Books',18.00,'BOOK-2.svg') ON CONFLICT DO NOTHING;
+INSERT INTO product VALUES ('FIT-1','Training mat','Fitness',35.00,'FIT-1.svg') ON CONFLICT DO NOTHING;
+INSERT INTO product VALUES ('FIT-2','Steel water bottle','Fitness',21.00,'FIT-2.svg') ON CONFLICT DO NOTHING;

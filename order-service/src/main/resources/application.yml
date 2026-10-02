@@ -5,7 +5,15 @@ spring:
     # Overridden by SPRING_PROFILES_ACTIVE=k8s in the Kubernetes Deployment.
     active: local
 
+  task:
+    scheduling:
+      pool:
+        size: 2
+  sql:
+    init:
+      mode: always
   jpa:
+    defer-datasource-initialization: true
     open-in-view: false
     hibernate:
       ddl-auto: update
@@ -51,3 +59,13 @@ logging:
     org.hibernate.SQL: DEBUG
     org.hibernate.orm.jdbc.bind: TRACE
     org.springframework.jdbc.datasource: INFO
+
+springdoc:
+  api-docs:
+    version: OPENAPI_3_0
+  paths-to-exclude: /error, /actuator/**
+  swagger-ui:
+    # API exploration only; business requests continue through gateway from the portal/Postman.
+    supported-submit-methods: []
+    disable-swagger-default-url: true
+    persist-authorization: false

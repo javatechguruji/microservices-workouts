@@ -7,3 +7,10 @@ CREATE DATABASE "payment-srv-db";
 
 -- Keycloak stores realms, clients and service accounts in the shared Postgres.
 CREATE DATABASE "keycloak";
+
+CREATE DATABASE "product-aggregator-service-db";
+CREATE DATABASE "customer-service-db";
+CREATE DATABASE "product-discount-service-db";
+CREATE DATABASE "rating-service-db";
+CREATE DATABASE "inventory-service-db";
+CREATE DATABASE "notification-service-db";

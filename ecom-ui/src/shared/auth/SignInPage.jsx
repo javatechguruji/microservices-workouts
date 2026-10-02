@@ -1,4 +1,4 @@
-export default function SignInPage({ login, error }) {
+export default function SignInPage({ login, register, error }) {
   return (
     <div className="signin">
       <div className="signin-brand">
@@ -12,11 +12,11 @@ export default function SignInPage({ login, error }) {
         <h1>
           A simpler way to
           <br />
-          manage your orders.
+          shop your favorites.
         </h1>
         <p>
-          Track your purchases, review the details and stay up to date. Your workspace is ready when
-          you are.
+          Discover products picked for you, shop your favorites and track every delivery. Your
+          workspace is ready when you are.
         </p>
         {error && (
           <div className="alert" role="alert">
@@ -25,6 +25,9 @@ export default function SignInPage({ login, error }) {
         )}
         <button onClick={login}>
           Sign in to your account <span aria-hidden="true">→</span>
+        </button>
+        <button className="secondary" onClick={register}>
+          Create an account
         </button>
         <p className="hint">Secure sign-in for customers and administrators.</p>
       </div>

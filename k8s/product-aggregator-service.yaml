@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: product-aggregator-service
+  namespace: ecommerce
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: product-aggregator-service
+  template:
+    metadata:
+      labels:
+        app: product-aggregator-service
+    spec:
+      containers:
+        - name: product-aggregator-service
+          image: product-aggregator-service:stage6
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9104
+          env:
+            - name: KEYCLOAK_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: service-client-credentials
+                  key: product-aggregator-service
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: SPRING_PROFILES_ACTIVE
+              value: k8s
+          volumeMounts:
+            - name: product-images
+              mountPath: /app/product-images
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 9104
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 9104
+            initialDelaySeconds: 20
+            periodSeconds: 10
+      volumes:
+        - name: product-images
+          hostPath:
+            path: /mnt/product-images
+            type: Directory
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: product-aggregator-service
+  namespace: ecommerce
+spec:
+  type: ClusterIP
+  selector:
+    app: product-aggregator-service
+  ports:
+    - name: http
+      port: 9104
+      targetPort: 9104

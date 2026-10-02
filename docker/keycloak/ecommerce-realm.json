@@ -3,7 +3,7 @@
   "enabled": true,
   "displayName": "Ecommerce Learning",
   "sslRequired": "none",
-  "registrationAllowed": false,
+  "registrationAllowed": true,
   "clients": [
     {
       "clientId": "gateway-service",
@@ -158,8 +158,8 @@
       ]
     },
     {
-      "clientId": "product-service",
-      "name": "product-service",
+      "clientId": "product-aggregator-service",
+      "name": "product-aggregator-service",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
@@ -277,6 +277,120 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "customer-service",
+      "name": "customer-service",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "Workouts-customer-service-2026!",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "fullScopeAllowed": true,
+      "protocolMappers": [
+        {
+          "name": "gateway-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "gateway-service",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "tenant",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "tenant",
+            "claim.name": "tenant",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "product-discount-service",
+      "name": "product-discount-service",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "Workouts-product-discount-service-2026!",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "fullScopeAllowed": true,
+      "protocolMappers": [
+        {
+          "name": "gateway-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "gateway-service",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "tenant",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "tenant",
+            "claim.name": "tenant",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "rating-service",
+      "name": "rating-service",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "Workouts-rating-service-2026!",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "fullScopeAllowed": true,
+      "protocolMappers": [
+        {
+          "name": "gateway-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "gateway-service",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "tenant",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "tenant",
+            "claim.name": "tenant",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true"
+          }
+        }
+      ]
     }
   ],
   "roles": {
@@ -326,7 +440,8 @@
             "orders:read",
             "payments:create",
             "payments:read",
-            "products:read"
+            "products:read",
+            "customers:write"
           ]
         }
       },
@@ -346,12 +461,43 @@
             "products:write",
             "inventory:read",
             "inventory:write",
-            "notifications:send"
+            "notifications:send",
+            "customers:write"
           ]
         }
       },
       {
         "name": "service"
+      },
+      {
+        "name": "customers:read:any"
+      },
+      {
+        "name": "customers:write"
+      },
+      {
+        "name": "discounts:read"
+      },
+      {
+        "name": "ratings:read"
+      },
+      {
+        "name": "catalog:quote"
+      },
+      {
+        "name": "inventory:reserve"
+      },
+      {
+        "name": "inventory:commit"
+      },
+      {
+        "name": "default-roles-ecommerce",
+        "composite": true,
+        "composites": {
+          "realm": [
+            "customer"
+          ]
+        }
       }
     ]
   },
@@ -380,9 +526,15 @@
         ]
       },
       "realmRoles": [
+        "products:read",
+        "payments:read:any",
+        "payments:create",
+        "catalog:quote",
+        "inventory:reserve",
         "service",
         "inventory:read",
-        "products:read"
+        "inventory:commit",
+        "customers:read:any"
       ]
     },
     {
@@ -414,17 +566,20 @@
       ]
     },
     {
-      "username": "service-account-product-service",
+      "username": "service-account-product-aggregator-service",
       "enabled": true,
-      "serviceAccountClientId": "product-service",
+      "serviceAccountClientId": "product-aggregator-service",
       "attributes": {
         "tenant": [
           "demo"
         ]
       },
       "realmRoles": [
+        "ratings:read",
         "service",
-        "inventory:read"
+        "inventory:read",
+        "customers:read:any",
+        "discounts:read"
       ]
     },
     {
@@ -459,7 +614,7 @@
       "credentials": [
         {
           "type": "password",
-          "value": "Workouts-customer1-2026!",
+          "value": "customer1",
           "temporary": false
         }
       ]
@@ -482,7 +637,7 @@
       "credentials": [
         {
           "type": "password",
-          "value": "Workouts-customer2-2026!",
+          "value": "customer2",
           "temporary": false
         }
       ]
@@ -505,7 +660,7 @@
       "credentials": [
         {
           "type": "password",
-          "value": "Workouts-admin1-2026!",
+          "value": "admin1",
           "temporary": false
         }
       ]
@@ -528,9 +683,48 @@
       "credentials": [
         {
           "type": "password",
-          "value": "Workouts-othercustomer-2026!",
+          "value": "othercustomer",
           "temporary": false
         }
+      ]
+    },
+    {
+      "username": "service-account-customer-service",
+      "enabled": true,
+      "serviceAccountClientId": "customer-service",
+      "attributes": {
+        "tenant": [
+          "demo"
+        ]
+      },
+      "realmRoles": [
+        "service"
+      ]
+    },
+    {
+      "username": "service-account-product-discount-service",
+      "enabled": true,
+      "serviceAccountClientId": "product-discount-service",
+      "attributes": {
+        "tenant": [
+          "demo"
+        ]
+      },
+      "realmRoles": [
+        "service"
+      ]
+    },
+    {
+      "username": "service-account-rating-service",
+      "enabled": true,
+      "serviceAccountClientId": "rating-service",
+      "attributes": {
+        "tenant": [
+          "demo"
+        ]
+      },
+      "realmRoles": [
+        "service"
       ]
     }
   ]

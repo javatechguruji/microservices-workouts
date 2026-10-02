@@ -39,6 +39,7 @@ for client in realm['clients']:
     assert 'gateway-service' in claims.get('aud', [])
     assert claims.get('tenant') == 'demo'
     assert 'service' in claims.get('realm_access', {}).get('roles', [])
+    assert not {'customer','admin'} & set(claims.get('realm_access',{}).get('roles',[])), 'Machine client inherited a human role: '+client['clientId']
     try:
         with request_token(client['clientId'], 'deliberately-invalid-secret'):
             raise AssertionError('Incorrect secret accepted')
@@ -46,4 +47,4 @@ for client in realm['clients']:
         assert error.code in (400, 401), error.code
         assert json.load(error)['error'] in ('invalid_client', 'unauthorized_client')
     print(client['clientId'] + ': token issued; issuer/client claims correct; wrong secret rejected')
-print('All six clients verified. No secrets or tokens printed.')
+print('All service clients verified. No secrets or tokens printed.')

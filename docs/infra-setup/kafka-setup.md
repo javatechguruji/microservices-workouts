@@ -1,214 +1,124 @@
-# Kafka setup and microservice usage
+# Kafka setup and application configuration
 
-Back to the [infrastructure index](README.md). The root
-[Compose file](../../docker-compose.yml) defines the broker; see also
-[Kafka design notes](../kafka-notes.md).
-
-## Purpose and configured values
-
-Payment-service publishes `payment-completed`. Order-service updates the order,
-and notification-service logs a notification. Both consumers receive events
-independently because they use different consumer groups.
-
-| Setting | Repository value |
-| --- | --- |
-| Image / container | `apache/kafka:3.8.0` / `kafka` |
-| Mode | Single-node KRaft; combined broker and controller; no ZooKeeper |
-| Node ID / controller quorum | `1` / `1@kafka:9093` |
-| Cluster ID | `ci8CzldyQfKoDVpQ7YR2Vg` |
-| Data volume / directory | `workouts-kafka-data` / `/var/lib/kafka/data` |
-| Authentication / TLS | None; PLAINTEXT for local learning |
-| Restart policy | `unless-stopped` |
-
-The Compose environment sets `KAFKA_PROCESS_ROLES=broker,controller` and
-`KAFKA_LOG_DIRS=/var/lib/kafka/data`. Internal offsets and transaction-state
-replication factors are `1`, with transaction-state minimum ISR `1`, because
-there is only one broker. This is a learning topology without broker redundancy.
-Keep the cluster ID consistent with the existing volume.
+The shared-infra broker is `apache/kafka:3.8.0`, single-node KRaft with broker and
+controller roles. It has no authentication/TLS or broker redundancy. Data is stored
+in external volume `workouts-kafka-data` at `/var/lib/kafka/data` through the explicit
+`KAFKA_LOG_DIRS` setting. Keep its cluster ID consistent with the existing volume.
 
 ## Listener configuration
 
-| Listener | Advertised address | Used by |
-| --- | --- | --- |
-| `PLAINTEXT_HOST` | `localhost:9092` | IntelliJ applications |
-| `PLAINTEXT_K8S` | `host.minikube.internal:9094` | Minikube application Pods |
-| `PLAINTEXT_DOCKER` | `kafka:29092` | Kafka UI and Docker diagnostic clients |
-| `CONTROLLER` | Quorum address `kafka:9093` | Internal KRaft traffic, not applications |
+| Client                           | Bootstrap and advertised address          |
+| -------------------------------- | ----------------------------------------- |
+| IntelliJ applications            | `localhost:9092`                          |
+| Minikube applications            | `host.minikube.internal:9094`             |
+| Kafka UI / Compose-network tools | `kafka:29092`                             |
+| KRaft controller only            | `kafka:9093`; not an application listener |
 
-Only 9092 and 9094 are published on the Mac. The full listener configuration
-already lives in Compose:
+The bootstrap connection returns broker metadata. Minikube must use 9094 because
+9092 advertises localhost, which would point to the application Pod on subsequent
+connections. Kafka UI similarly needs the Docker-network listener, not localhost.
+The exact listener configuration is in [Compose](../../docker-compose.yml).
 
-```yaml
-KAFKA_LISTENERS: PLAINTEXT_HOST://:9092,PLAINTEXT_K8S://:9094,PLAINTEXT_DOCKER://:29092,CONTROLLER://:9093
-KAFKA_ADVERTISED_LISTENERS: PLAINTEXT_HOST://localhost:9092,PLAINTEXT_K8S://host.minikube.internal:9094,PLAINTEXT_DOCKER://kafka:29092
-KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,PLAINTEXT_K8S:PLAINTEXT,PLAINTEXT_DOCKER:PLAINTEXT
-KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_HOST
-```
+## Installation and topic initialization
 
-A Kafka client first contacts a bootstrap server, then uses the broker's
-advertised address. Therefore Minikube clients need port 9094, not merely a
-host-name replacement on 9092. See [Kafka listener configuration](https://kafka.apache.org/38/configuration/broker-configs/).
+From repository root with Docker Desktop ready:
 
-## Installation and readiness
-
-Run from the repository root with Docker Desktop running:
-
-```bash
+```sh
 docker volume create workouts-kafka-data
-docker compose config --quiet
 docker compose up -d kafka
-docker compose ps kafka
-docker compose logs --tail=100 kafka
-
-# Retry after startup if the broker is not ready yet.
 docker compose exec -T kafka /opt/kafka/bin/kafka-topics.sh \
   --bootstrap-server kafka:29092 --list
 ```
 
-The last command should exit successfully; an empty list is valid on a fresh
-broker. No Kafka or Java installation is needed on the Mac for these container
-commands. [Official Kafka Docker instructions](https://kafka.apache.org/38/getting-started/docker/).
+Retry the last command until the broker is ready; an empty topic list is valid.
+Create both application topics explicitly:
 
-Create the application topic explicitly for repeatable setup:
-
-```bash
-docker compose exec -T kafka /opt/kafka/bin/kafka-topics.sh \
+```sh
+for topic in payment-completed commerce-order-events; do
+  docker compose exec -T kafka /opt/kafka/bin/kafka-topics.sh \
   --bootstrap-server kafka:29092 --create --if-not-exists \
-  --topic payment-completed --partitions 1 --replication-factor 1
+  --topic "$topic" --partitions 1 --replication-factor 1
+done
+```
 
+`--if-not-exists` retains existing topics and partition counts; it does not resize
+them. Do not delete topics to match this small learning topology.
+
+## Spring configuration and microservice usage
+
+Order, payment, notification and customer depend on `spring-kafka`. Each uses
+`spring.kafka.bootstrap-servers: localhost:9092` locally and
+`host.minikube.internal:9094` in its k8s profile. Keep producer/consumer settings in
+their existing `application.yml`; merge under existing YAML keys.
+
+Excerpt from [application.yml](../../payment-service/src/main/resources/application.yml) (surrounding code omitted):
+
+```yaml
+key-serializer: org.apache.kafka.common.serialization.StringSerializer   # turns the message key (orderId) into bytes to send over the network
+value-serializer: org.springframework.kafka.support.serializer.JsonSerializer   # turns the event object into JSON bytes to send over the network
+acks: all                    # don't treat the send as successful until every in-sync replica has a copy, not just the leader
+client-id: payment-service-producer   # this producer's name, so it's easy to spot in Kafka's own logs, metrics, and quotas
+compression-type: snappy     # compress each batch before sending — smaller over the network and cheaper for the broker to store
+batch-size: 16384            # max size of one batch, in BYTES — not a count of messages, see linger.ms below
+retries: 2147483647          # keep retrying a failed send almost forever — delivery.timeout.ms below is what actually limits the total wait, not this number
+```
+
+Payment also enables producer idempotence and disables Java type headers. Order's
+commerce publisher constructs its own string producer in `CommerceScheduler`, so
+editing payment producer properties does not configure both publishers.
+
+| Topic                   | Business use                                                                 |
+| ----------------------- | ---------------------------------------------------------------------------- |
+| `commerce-order-events` | Order outbox to persisted notification inbox and purchase preferences        |
+| `payment-completed`     | Payment outbox to legacy order confirmation and payment notification logging |
+
+For real code examples spanning producer and consumers, read
+[Kafka/outbox concepts](../kafka/kafka-notes-scenarios.md). PaymentServiceImpl writes a database
+outbox; it no longer directly publishes to Kafka during payment processing.
+
+## Inspect topics and consumer groups
+
+```sh
 docker compose exec -T kafka /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server kafka:29092 --describe --topic payment-completed
-```
-
-`--if-not-exists` preserves an existing topic and its current partition count.
-Do not delete an existing topic to match this example.
-
-## Spring Boot configuration
-
-Payment, order and notification already depend on:
-
-```xml
-<dependency>
-    <groupId>org.springframework.kafka</groupId>
-    <artifactId>spring-kafka</artifactId>
-</dependency>
-```
-
-Their profile-specific broker settings are:
-
-```yaml
-# application-local.yml
-spring:
-  kafka:
-    bootstrap-servers: localhost:9092
-```
-
-```yaml
-# application-k8s.yml
-spring:
-  kafka:
-    bootstrap-servers: host.minikube.internal:9094
-```
-
-Keep each service's existing `application.yml` producer/consumer settings.
-Payment uses string keys, JSON values, `acks=all`, producer idempotence, and no
-Java type headers. Consumers specify their own local event class for JSON
-conversion; they use manual acknowledgment and disable automatic offset commits.
-Changing only the bootstrap profile preserves those settings.
-
-## Example: payment event flow using existing code
-
-Security is now enabled: run the gateway too and obtain a `customer1` access
-token using the [security demo/PKCE flow](../security/Authentication%20and%20Authorization%20at%20Microservice.md).
-For the curl examples, set `ACCESS_TOKEN` to that token. Alternatively perform
-the same create/read actions in the browser demo. Requests enter port 9100;
-the owning service authorizes the caller's headers.
-
-
-1. Start Postgres and Kafka. Create the topic as above if needed.
-2. Run order-service, payment-service and notification-service in IntelliJ with
-   the `local` profile.
-3. Create an order and copy its returned `id`:
-
-```bash
-curl --fail-with-body -X POST http://localhost:9100/api/orders \
-  -H "Authorization: Bearer $ACCESS_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"customerId":"customer1","amount":25.00}'
-```
-
-4. Set that actual ID below and pay it once:
-
-```bash
-ORDER_ID=123  # Replace 123 with the ID returned above.
-curl --fail-with-body -X POST http://localhost:9100/payments \
-  -H "Authorization: Bearer $ACCESS_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d "{\"orderId\":$ORDER_ID,\"amount\":25.00}"
-```
-
-[PaymentServiceImpl](../../payment-service/src/main/java/com/tip/ecommerce/payment/service/impl/PaymentServiceImpl.java)
-saves the payment and calls `kafkaTemplate.send` with the order ID as key.
-The event value has `orderId`, `paymentId`, and `status` fields.
-[Order's listener](../../order-service/src/main/java/com/tip/ecommerce/order/messaging/PaymentCompletedListener.java)
-uses `order-group`; [notification's listener](../../notification-service/src/main/java/com/tip/ecommerce/notification/messaging/PaymentCompletedListener.java)
-uses `notification-group`.
-
-5. Read the order again after asynchronous processing:
-
-```bash
-curl --fail-with-body "http://localhost:9100/api/orders/$ORDER_ID" -H "Authorization: Bearer $ACCESS_TOKEN"
-```
-
-Expected: status changes to `CONFIRMED`, and the notification console records
-processing. This example writes real learning data; create a new order for each
-repeat because the payment service rejects another successful payment for the
-same order. The application currently uses a direct database write plus Kafka
-send, not an outbox; event delivery is not atomic with the database save.
-
-## Inspect messages and consumer groups
-
-```bash
-# Historical messages; stop with Ctrl+C. No application consumer group is used.
+  --bootstrap-server kafka:29092 --describe --topic commerce-order-events
 docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh \
-  --bootstrap-server kafka:29092 --topic payment-completed --from-beginning \
+  --bootstrap-server kafka:29092 --topic commerce-order-events --from-beginning \
   --property print.key=true
-
-docker compose exec -T kafka /opt/kafka/bin/kafka-consumer-groups.sh \
-  --bootstrap-server kafka:29092 --describe --group order-group
-
-docker compose exec -T kafka /opt/kafka/bin/kafka-consumer-groups.sh \
-  --bootstrap-server kafka:29092 --describe --group notification-group
 ```
 
-A group may not exist until its application has subscribed. When local and k8s
-instances use the same group ID, they share partitions and split processing.
-They do not each receive a separate copy; use distinct group IDs if that becomes
-necessary for independent environment exercises.
+Stop the console consumer with Ctrl+C. It is an inspection consumer, not an
+application-group offset reset. Inspect a business consumer separately:
+
+```sh
+docker compose exec -T kafka /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server kafka:29092 --describe --group commerce-notifications-v1
+```
+
+Other groups: `customer-preferences-v1`, `order-group`, `notification-group`.
+Groups may not exist before their applications subscribe. Instances sharing a
+group divide work, including local and k8s instances using this shared broker.
+Use [Kafka UI](kafka-ui-setup.md) for graphical inspection.
 
 ## Operations and troubleshooting
 
-```bash
-docker compose logs -f kafka
+```sh
+docker compose ps kafka
+docker compose logs --tail=100 kafka
 docker compose stop kafka
 docker compose up -d kafka
-docker compose restart kafka
-docker volume inspect workouts-kafka-data
-
-# Node-level TCP check when Minikube is running.
-minikube ssh -- 'nc -vz -w 5 host.minikube.internal 9094'
 ```
 
-- **External volume absent:** create `workouts-kafka-data` first.
-- **Bootstrap connects but sends time out:** check advertised listener addresses,
-  not just the first connection. Use the correct port for the client location.
-- **Replication factor error:** this setup has one broker; example topics use 1.
-- **Invalid cluster ID / log directory:** check logs and existing metadata. Do
-  not reformat or delete the volume as a quick fix.
-- **Consumer JSON errors:** compare the event schema, configured target type,
-  and deserializer settings in the actual consumer service.
-- **Messages remain but UI restarts:** expected; messages live on the Kafka volume.
+A stop interrupts event delivery. Outboxes retain pending events; see
+[the failure exercise](../project-docs/manual-verification.md#6-kafka-and-background-updates).
+No event consumers need to be routed through the API gateway.
 
-Minikube TCP access is only a first check; confirm a real producer and consumer
-from the `k8s` applications when Jenkins deployment is available.
+| Symptom                                     | Check                                                               |
+| ------------------------------------------- | ------------------------------------------------------------------- |
+| Bootstrap connects, later send fails        | Advertised address and client-specific port                         |
+| Replication factor error                    | This broker has only one node; topic factor is 1                    |
+| Group lag rises                             | Consumer database/deserialization failures and retry logs           |
+| Invalid cluster metadata                    | Existing volume and cluster ID; do not reformat as a shortcut       |
+| Shopping order confirms but inbox is absent | Order outbox and notification consumer, not legacy payment listener |
+
+Minikube host reachability must be verified after cluster startup. Keep Kafka in
+Compose; no broker manifest is needed inside Minikube.

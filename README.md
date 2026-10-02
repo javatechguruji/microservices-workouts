@@ -1,81 +1,47 @@
 # microservices-workouts
 
-A small e-commerce system, one service per top-level folder, built to
-practice real microservices concerns end-to-end. See `INTERVIEW_TOPICS.md`
-for the full topic checklist and `k8s/` for the Kubernetes-native
-application deployment setup (no Eureka, no Config Server).
+A learning e-commerce system with a React customer/admin portal and nine independent
+Spring Boot services. Customers shop, save preferences and pay through a simulated
+checkout; administrators create customer orders, ship and mark delivered. The
+PostgreSQL records and Kafka events are real; payments and tracking are simulations.
 
-All microservice ports follow one `91xx` sequence, easy to remember —
-`9092`/`9094` (Kafka) and `9090` (reserved for Prometheus, not yet added)
-are deliberately skipped, see `k8s/README.md`.
+## Start and learn
 
-| Service | Port | Responsibility |
-|---|---|---|
-| `gateway-service` | 9100 | API Gateway (Spring Cloud Gateway) — routes to `order-service` |
-| `order-service` | 9101 | Orders — Postgres (`order-srv-db`) |
-| `payment-service` | 9102 | Payments — calls `order-service` to confirm an order exists before accepting payment; Postgres (`payment-srv-db`); publishes `payment-completed` to Kafka |
-| `notification-service` | 9103 | Sends notifications — no DB; consumes `payment-completed` from Kafka |
-| `product-service` | 9104 | Product catalog (H2 for now, MongoDB later) |
-| `inventory-service` | 9105 | Stock/inventory (H2) |
+- [Documentation index and learning sequence](docs/README.md)
+- [Infrastructure setup](docs/infra-setup/README.md) and [application startup](docs/infra-setup/commerce-setup.md)
+- [Business flows and required services](docs/project-docs/business-flows-and-service-dependencies.md)
+- [Concept-to-code guides](docs/README.md#learning-sequence) and [manual verification](docs/project-docs/manual-verification.md)
+- [Keycloak credentials and configuration](docs/infra-setup/keycloak-setup.md)
+- [Implemented vs future topics](Topics.md)
 
-Each service is an independent Spring Boot Maven project (own `pom.xml`,
-own `Application` class) — no multi-module reactor build, so each can be
-run, tested, and eventually deployed independently, same as they would be
-in production.
+## Service ownership
 
-## Infrastructure and application deployment
+| Service                    | Port | Owns                                                                |
+| -------------------------- | ---- | ------------------------------------------------------------------- |
+| gateway-service            | 9100 | JWT validation, trusted identity headers, HTTP routing              |
+| order-service              | 9101 | Orders/items, durable checkout coordination, shipping, order outbox |
+| payment-service            | 9102 | Idempotent simulated payments and payment outbox                    |
+| notification-service       | 9103 | Customer event inbox and payment notification logging               |
+| product-aggregator-service | 9104 | Product data/images, WebFlux aggregation, authoritative quotes      |
+| inventory-service          | 9105 | Stock and atomic reservations                                       |
+| customer-service           | 9106 | Profiles and preference history                                     |
+| product-discount-service   | 9107 | Product discount lookup                                             |
+| rating-service             | 9108 | Rating averages/counts                                              |
 
-`docker-compose.yml` defines the **shared-infra** project and contains only
-Postgres, Kafka, Kafka UI, Redis, and Keycloak. The same infrastructure serves IntelliJ
-applications and Minikube applications. No microservice belongs in Compose.
+Each Java service has its own Maven project, Dockerfile and local/k8s profiles.
+The root [pom.xml](pom.xml) aggregates all nine services for a single Maven/IntelliJ
+import; each service remains independently buildable and deployable.
+React lives in `ecom-ui` and runs locally on 5173; it uses npm, not Maven.
+See [IntelliJ and Maven setup](docs/infra-setup/intellij-maven-setup.md).
 
-Supporting files are organized by purpose:
+## Deployment boundary
 
-- `docker/postgres/init-databases.sql`: Compose-mounted Postgres initialization
-  script, executed only when the database volume is first initialized.
-- [docs/infra-setup/](docs/infra-setup/README.md): installation, configuration,
-  and microservice usage guides for Postgres, Kafka, Kafka UI, Redis, and Keycloak.
-- `k8s/`: application manifests for the future Jenkins deployment.
+Root Compose runs **shared-infra only**: PostgreSQL, Kafka, Kafka UI, Redis and
+Keycloak. Applications run in IntelliJ now. Future Jenkins deployments use
+[application manifests](k8s/README.md) in Minikube with the same infrastructure.
+No Jenkins pipeline is implemented. Redis is installed but not used by application
+code. [docker/](docker/README.md) contains support files and local product images.
 
-For a fresh Docker environment, create the external volumes once, then start
-infrastructure from the repository root:
-
-```bash
-docker volume create workouts-postgres-data
-docker volume create workouts-kafka-data
-docker compose up -d
-```
-
-Run microservices from IntelliJ with the `local` Spring profile. Alternatively,
-run `mvn spring-boot:run -Dspring-boot.run.profiles=local` in a service folder.
-All six services have `local` and `k8s` configuration files, Dockerfiles, and
-application manifests. Product and inventory retain embedded H2; their staging
-Pod storage is temporary and resets when a Pod is replaced.
-
-Later, **Jenkins will build and deploy microservices to Minikube**, using the
-application manifests in `k8s/` and the `k8s` Spring profile. Jenkins is not
-implemented yet. Existing Dockerfiles are application image build inputs for
-that future pipeline; they do not add microservices to Docker Compose.
-
-| Dependency | IntelliJ (`local`) | Minikube (`k8s`) |
-| --- | --- | --- |
-| Postgres | `localhost:5432` | `host.minikube.internal:5432` |
-| Kafka | `localhost:9092` | `host.minikube.internal:9094` |
-| Redis | `localhost:6379` | `host.minikube.internal:6379` |
-| Keycloak token endpoint host | `localhost:8180` | `host.minikube.internal:8180` |
-
-Redis application integration is documented but not yet added to service
-code. See [Redis setup](docs/infra-setup/redis-setup.md) for its password and profile
-examples, [Kubernetes deployment contract](k8s/README.md) for the Jenkins
-boundary, and [Kafka notes](docs/kafka-notes.md) for the event flow.
-
-
-## Authentication and authorization
-
-All application HTTP calls enter the gateway on port 9100. The gateway validates
-Keycloak JWTs and forwards trusted identity headers; downstream services enforce
-roles, permissions, ownership and tenant. Start all services locally, run the
-[React frontend](ecom-ui/README.md) (`npm ci` then `npm run dev` in `ecom-ui`), and open
-[the order workspace](http://localhost:5173/) for customer/admin dashboards,
-order creation, details and simulated payments, with real Keycloak PKCE login. See [the security guide](docs/security/Authentication%20and%20Authorization%20at%20Microservice.md)
-for demo users, policy examples, direct-header POC simulations and automated tests.
+All application HTTP goes through gateway. Downstream services trust its headers
+and apply permission/owner/tenant checks; direct local ports remain a deliberate
+POC bypass. Kafka processing is independent of HTTP authentication.

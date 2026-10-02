@@ -1,4 +1,12 @@
-// Deliberately limited to this origin's application paths: no arbitrary token destinations.
+// One configured gateway origin; callers cannot choose arbitrary token destinations.
+export const GATEWAY_ORIGIN = new URL(import.meta.env?.VITE_GATEWAY_URL || 'http://localhost:9100')
+  .origin;
+
+export function gatewayUrl(path) {
+  validateRequest(path, 'GET', '');
+  return `${GATEWAY_ORIGIN}${path}`;
+}
+
 export function validateRequest(path, method, body) {
   if (
     !/^\/(api\/|payments(?:\/|$)|notifications(?:\/|$))/.test(path) ||
@@ -32,11 +40,12 @@ export async function gatewayRequest({
       'X-Auth-Permissions': 'orders:read:any,inventory:read',
     });
   if (method !== 'GET') headers['Content-Type'] = 'application/json';
-  const response = await fetcher(path, {
+  const response = await fetcher(gatewayUrl(path), {
     method,
     headers,
     ...(method !== 'GET' ? { body } : {}),
     redirect: 'error',
+    credentials: 'omit',
     signal: AbortSignal.timeout(15000),
   });
   const text = await response.text();

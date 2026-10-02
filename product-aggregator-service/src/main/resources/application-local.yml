@@ -1,0 +1,18 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/product-aggregator-service-db
+    username: postgres
+    password: postgres
+  kafka:
+    bootstrap-servers: localhost:9092
+services:
+  gateway-url: http://localhost:9100
+security:
+  client:
+    id: product-aggregator-service
+    secret: ${KEYCLOAK_CLIENT_SECRET:ZRaZxGAPOI1QpmUUpcQpTmbwFWgJ91C71ckGAFNVl0M}
+    token-uri: http://localhost:8180/realms/ecommerce/protocol/openid-connect/token
+
+catalog:
+  # Empty means discover docker/product-images from the workspace or service directory.
+  images: ${PRODUCT_IMAGE_DIR:}

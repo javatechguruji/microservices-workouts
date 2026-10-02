@@ -1,0 +1,14 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/customer-service-db
+    username: postgres
+    password: postgres
+  kafka:
+    bootstrap-servers: localhost:9092
+services:
+  gateway-url: http://localhost:9100
+security:
+  client:
+    id: customer-service
+    secret: ${KEYCLOAK_CLIENT_SECRET:Workouts-customer-service-2026!}
+    token-uri: http://localhost:8180/realms/ecommerce/protocol/openid-connect/token

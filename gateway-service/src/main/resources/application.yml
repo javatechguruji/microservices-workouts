@@ -2,34 +2,49 @@ spring:
   application:
     name: gateway-service
   profiles:
-    # Overridden by SPRING_PROFILES_ACTIVE=k8s in the Kubernetes Deployment.
-    active: local
+    # Used only when no active profile is selected; Kubernetes explicitly selects k8s.
+    default: local
 
   cloud:
     gateway:
-      routes:
-        # order-service's real API already lives at /api/orders/** — no
-        # rewrite needed, the gateway just forwards the path as-is.
-        - id: order-service
-          uri: ${services.order.url}
-          predicates:
-            - Path=/api/orders/**
-        - id: payment-service
-          uri: ${services.payment.url}
-          predicates:
-            - Path=/payments/**
-        - id: notification-service
-          uri: ${services.notification.url}
-          predicates:
-            - Path=/notifications/**
-        - id: product-service
-          uri: ${services.product.url}
-          predicates:
-            - Path=/api/products/**
-        - id: inventory-service
-          uri: ${services.inventory.url}
-          predicates:
-            - Path=/api/inventory/**
+      server:
+        webflux:
+          routes:
+            # order-service's real API already lives at /api/orders/** — no
+            # rewrite needed, the gateway just forwards the path as-is.
+            - id: order-service
+              uri: ${services.order.url}
+              predicates:
+                - Path=/api/orders/**
+            - id: payment-service
+              uri: ${services.payment.url}
+              predicates:
+                - Path=/payments/**
+            - id: notification-service
+              uri: ${services.notification.url}
+              predicates:
+                - Path=/notifications/**
+            - id: product-aggregator-service
+              uri: ${services.product.url}
+              predicates:
+                - Path=/api/products/**
+            - id: inventory-service
+              uri: ${services.inventory.url}
+              predicates:
+                - Path=/api/inventory/**
+
+            - id: customer-service
+              uri: ${services.customer.url}
+              predicates:
+                - Path=/api/customers/**
+            - id: product-discount-service
+              uri: ${services.product-discount.url}
+              predicates:
+                - Path=/api/discounts/**
+            - id: rating-service
+              uri: ${services.rating.url}
+              predicates:
+                - Path=/api/ratings/**
 
 server:
   port: 9100
@@ -39,12 +54,3 @@ management:
     health:
       probes:
         enabled: true
-
-logging:
-  level:
-    org.springframework.cloud.gateway: DEBUG
-
-security:
-  jwt:
-    issuer: http://localhost:8180/realms/ecommerce
-    audience: gateway-service

@@ -24,7 +24,7 @@ public class PaymentController {
     }
 
     @RequireAccess(permissions="payments:create")
-    @PostMapping
+  @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public PaymentDto createPayment(@RequestBody CreatePaymentRequest request, HttpServletRequest http) {
         authorize(request.orderId(),http);
@@ -32,7 +32,7 @@ public class PaymentController {
     }
 
     @RequireAccess(permissions={"payments:read","payments:read:any"})
-    @GetMapping("/{id}")
+  @GetMapping("/{id}")
     public PaymentDto getPayment(@PathVariable Long id, HttpServletRequest http) {
         PaymentDto payment = paymentService.getPayment(id);
         authorize(payment.orderId(),http);

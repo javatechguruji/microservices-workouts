@@ -10,6 +10,25 @@ services:
   inventory:
     url: http://localhost:9105
 
+  customer:
+    url: http://localhost:9106
+  product-discount:
+    url: http://localhost:9107
+  rating:
+    url: http://localhost:9108
+
 security:
+  cors:
+    # Browser origin for the local React development server.
+    # Override with exact comma-separated origins, without paths or trailing slashes.
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
   jwt:
+    # Must match the iss claim in tokens issued by the shared Keycloak realm.
+    issuer: http://localhost:8180/realms/ecommerce
+    audience: gateway-service
+    # IntelliJ can reach the shared Keycloak directly on localhost.
     jwk-set-uri: http://localhost:8180/realms/ecommerce/protocol/openid-connect/certs
+
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG

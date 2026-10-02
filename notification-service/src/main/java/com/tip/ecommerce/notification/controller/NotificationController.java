@@ -20,7 +20,7 @@ public class NotificationController {
     }
 
     @com.tip.ecommerce.notification.security.RequireAccess(permissions="notifications:send")
-    @PostMapping
+  @PostMapping
     @ResponseStatus(HttpStatus.ACCEPTED)
     public void send(@RequestBody NotificationRequest request) {
         notificationService.send(request);

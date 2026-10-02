@@ -1,7 +1,7 @@
 import WorkspaceLayout from '../../shared/layout/WorkspaceLayout';
 const navigation = [
   {
-    label: 'Dashboard',
+    label: 'Shop',
     path: '/customer/dashboard',
     icon: '◫',
     matches: (route) => route === '/customer/dashboard',
@@ -13,11 +13,22 @@ const navigation = [
     matches: (route) => route.startsWith('/customer/orders') && route !== '/customer/orders/new',
   },
   {
-    label: 'Create order',
-    path: '/customer/orders/new',
+    label: 'Your cart',
+    path: '/customer/cart',
     icon: '＋',
-    matches: (route) => route === '/customer/orders/new',
-    permission: 'orders:create',
+    matches: (route) => route === '/customer/cart',
+  },
+  {
+    label: 'Your profile',
+    path: '/customer/profile',
+    icon: '○',
+    matches: (r) => r === '/customer/profile',
+  },
+  {
+    label: 'Updates',
+    path: '/customer/notifications',
+    icon: '◇',
+    matches: (r) => r === '/customer/notifications',
   },
 ];
 export default function CustomerLayout({ route, children }) {
