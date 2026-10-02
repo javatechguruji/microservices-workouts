@@ -1,17 +1,21 @@
 # 09. CORS, Preflight Requests and Browser Security
 
-**Topic name:** Cross-Origin Resource Sharing (CORS).  
-**Implemented scenario:** React on `http://localhost:5173` calls API gateway on
-`http://localhost:9100` directly. Gateway handles CORS before JWT authentication.
-## 1. Purpose: why does the browser need CORS?
+## 1. Purpose: why do we need CORS?
 
-An origin consists of **scheme + hostname + port**. Our UI and gateway have
-different ports, so they are different origins.
+Our React page runs at `http://localhost:5173`. It asks gateway at
+`http://localhost:9100` for data, such as the customer's orders.
 
-The browser's same-origin policy restricts JavaScript reading response from cross-origin . 
-CORS lets gateway declare which frontend origins may access its API.
-Postman, curl and service clients does not block cross-origin calls,only browser do this.
+These addresses use different ports. The browser treats them as different
+**origins**. An origin simply means the `http` or `https` part, the hostname and
+the port together.
 
+Before letting React read the response, the browser needs permission from gateway.
+**CORS is how gateway gives that permission.** Our settings tell the browser:
+“Pages from `http://localhost:5173` are allowed to read my API responses.”
+
+Without that permission, the browser blocks React from reading the response.
+Postman and backend services do not apply this browser rule. The API still needs
+login and permission checks to protect the data.
 
 ## 2. Request flow: preflight, authentication, routing
 
@@ -31,15 +35,28 @@ sequenceDiagram
     G-->>B: Orders with Access-Control-Allow-Origin
 ```
 
-The browser sends a preflight because `Authorization` is not a CORS-safelisted
-request header. JSON POST/PATCH requests also require preflight. It asks whether
-the intended method and headers are allowed; **the preflight does not carry the
-application's Bearer token**. Gateway answers it without contacting order-service.
-The subsequent business request still needs a valid token and permissions.
+Before sending the API request, the browser first sends an `OPTIONS` request to
+gateway. This is called a **preflight**. It asks: “Can this frontend send this
+request with these headers?” Headers carry extra details, such as the login token
+or the type of data being sent.
 
-Preflight results may be cached for up to the configured 600 seconds, subject to
-browser limits. Not seeing OPTIONS before every request is normal. Product image
-GET requests do not carry the API Bearer token and generally do not need preflight.
+Our React app sends the login token in the `Authorization` header, so the browser
+needs this permission first. Sending JSON data in a POST or PATCH request also
+needs a preflight.
+
+The OPTIONS request **does not contain the login token**. Gateway checks the CORS
+settings and replies directly. It does not call order-service for this check.
+
+If gateway allows the request, the browser sends the actual API request with the
+login token. Gateway checks the token, and order-service checks which orders the
+user can see. Allowing the preflight does not skip these security checks.
+
+The browser can remember this permission for **20 seconds**, as set in our code.
+During that time, it may send another matching API request without asking again.
+So it is normal not to see OPTIONS before every request.
+
+Product image requests do not send a login token and normally do not need this
+OPTIONS check.
 
 ## 3. React implementation: one explicit gateway destination(Optional-UI Only)
 
@@ -66,17 +83,6 @@ It does not remove the explicitly supplied Authorization header. Our API
 uses Bearer tokens, so it does not need cookie-based credentialed CORS.
 Keycloak's own browser login/token flow has separate client configuration.
 
-[ShopPage.jsx](../../ecom-ui/src/modules/customer/pages/ShopPage.jsx) also resolves
-`product.image` through `gatewayUrl(...)`. Otherwise a relative image path would
-still go to port 5173 and fail after removing the proxy. Product images remain
-public at gateway, while catalog/profile/order APIs require authentication.
-
-[vite.config.js](../../ecom-ui/vite.config.js) now has only frontend server options:
-
-```javascript
-server: { host: 'localhost', port: 5173, strictPort: true },
-preview: { host: 'localhost', port: 5173, strictPort: true },
-```
 
 For environment values, build-time behavior, restart instructions and minikube
 access, use [application configuration](../infra-setup/commerce-setup.md#10-frontend-configuration).
@@ -101,19 +107,63 @@ Use exact comma-separated origins for additional frontends. No wildcard origin i
 enabled by default.
 
 [GatewaySecurity.java](../../gateway-service/src/main/java/com/tip/ecommerce/gateway/security/GatewaySecurity.java)
-creates a reactive `CorsConfigurationSource`, registers it for `/**`, and installs
-it explicitly in the Spring Security chain:
+defines the CORS settings in `corsConfigurationSource()`. Spring passes this bean
+into `security()`, where `.cors(...)` enables it for incoming requests.
+
+Only the CORS-related code is shown below. Other methods and security settings are
+omitted to keep this example focused; they remain in the actual Java class.
 
 ```java
-return http.cors(spec -> spec.configurationSource(cors))
-    .csrf(ServerHttpSecurity.CsrfSpec::disable)
-```
+@Configuration
+public class GatewaySecurity {
+    // Choose which frontend addresses, HTTP methods and headers are allowed.
+    // Use these CORS rules for all gateway paths.
+    @Bean
+    org.springframework.web.cors.reactive.CorsConfigurationSource corsConfigurationSource(
+            @org.springframework.beans.factory.annotation.Value("${security.cors.allowed-origins}")
+            java.util.List<String> origins) {
 
-This is a partial excerpt; the existing JWT and authorization rules follow it.
-Using Spring Security's CORS integration handles preflight **before authentication**
-and adds CORS headers to allowed-origin authentication failures too. We do not
-simply permit every OPTIONS request or duplicate CORS policy in each microservice.
-[Spring Security reactive CORS reference](https://docs.spring.io/spring-security/reference/reactive/integrations/cors.html).
+        var config = new org.springframework.web.cors.CorsConfiguration();
+        config.setAllowedOrigins(origins);
+        config.setAllowedMethods(java.util.List.of("GET", "POST", "PATCH", "OPTIONS"));
+        // Allow X-Auth headers so we can test requests with fake user details.
+        // Gateway replaces those details with the real user details from the checked token.
+        config.setAllowedHeaders(
+                java.util.List.of(
+                        "Authorization",
+                        "Content-Type",
+                        "X-Auth-Subject",
+                        "X-Auth-Username",
+                        "X-Auth-Roles",
+                        "X-Auth-Tenant",
+                        "X-Auth-Permissions"));
+        // Do not allow browser cookies for these API calls.
+        // The login token can still be sent in the Authorization header.
+        config.setAllowCredentials(false);
+        // Let the browser remember permission for 20 seconds before asking with OPTIONS again.
+        // This does not save API data or skip login checks for protected APIs.
+        config.setMaxAge(20L);
+        // Create a place to store which CORS settings apply to each URL path.
+        var source = new org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource();
+        // "/**" means all gateway paths. Apply the same CORS settings to all of them.
+        source.registerCorsConfiguration("/**", config);
+        return source;
+    }
+
+    @Bean
+    SecurityWebFilterChain security(
+            ServerHttpSecurity http,
+            org.springframework.web.cors.reactive.CorsConfigurationSource cors) {
+        // Spring passes in the CORS settings object created by the method above.
+        // Use it to check browser requests before checking the login token.
+        return http.cors(spec -> spec.configurationSource(cors))
+                // ... other security settings omitted ...
+                .build();
+    }
+
+    // ... other methods omitted ...
+}
+```
 
 | Setting           | Implemented value and purpose                                                    |
 | ----------------- | -------------------------------------------------------------------------------- |
@@ -121,137 +171,62 @@ simply permit every OPTIONS request or duplicate CORS policy in each microservic
 | Allowed methods   | GET, POST, PATCH, OPTIONS, matching the current UI operations.                   |
 | Allowed headers   | Authorization, Content-Type and the five existing X-Auth demo headers.           |
 | Allow credentials | false; browser API cookies are not used.                                         |
-| Max age           | 600 seconds for preflight caching.                                               |
+| Max age           | 20 seconds for preflight caching.                                               |
 
-The allowed X-Auth headers support the existing identity-spoofing learning exercise.
-Allowing a header through CORS **does not trust its value**. Gateway's
-[IdentityHeadersFilter](../../gateway-service/src/main/java/com/tip/ecommerce/gateway/security/IdentityHeadersFilter.java)
-replaces forged identity with validated JWT claims before forwarding. Downstream
-services continue enforcing role, owner and tenant rules.
 
 Keycloak's Web Origins setting controls calls to **Keycloak**. Gateway's allowlist
 controls calls to **gateway**. Changing one does not configure the other.
 
-## 5. How to test
+## 5. How to test in the browser
 
-### Required applications and tools
+Use the running application for this check.
 
-For the curl checks below, start **gateway-service** with the local profile.
-They use preflight or deliberately unauthenticated requests and need no downstream
-service or running Keycloak. Use a terminal with curl.
+1. Open `http://localhost:5173/` and sign in as `customer1`.
+2. Open browser **Developer Tools → Network**. Select **All** so preflight
+   requests are visible, then enter `/api/orders` in the filter box.
+3. Open **My orders**. Look for an **OPTIONS** request followed by a **GET** request
+   to `http://localhost:9100/api/orders`. Click a request and open **Headers** to
+   see its request method.
+4. Select **OPTIONS**. Under **Request Headers**, check that `Origin` is
+   `http://localhost:5173` and `Access-Control-Request-Method` is `GET`.
+   `Access-Control-Request-Headers` should include `authorization`. This request
+   asks permission to send the token; it does not contain the token itself.
+5. Under **Response Headers**, check that `Access-Control-Allow-Origin` is
+   `http://localhost:5173`, the allowed methods include `GET`, and the allowed
+   headers include `Authorization`. Expect a successful response (`200`).
+6. Select the actual **GET** request. Its request headers should contain
+   `Authorization: Bearer ...`. Expect `200`, an orders response (which can be an
+   empty list), and the My orders page to load.
 
-For browser login and My orders, start Keycloak, PostgreSQL, gateway, order-service
-and ecom-ui. For shopping, use the catalog and checkout service sets in the
-[business flow checklist](../project-docs/business-flows-and-service-dependencies.md).
-Use Chrome/Edge DevTools → Network. Accounts and passwords are in
-[Keycloak setup](../infra-setup/keycloak-setup.md); startup commands and configuration
-are in [commerce setup](../infra-setup/commerce-setup.md).
+If OPTIONS is missing, the browser may remember an earlier preflight. The current
+code sets this time to **20 seconds**. Keep Network open, wait more than 20 seconds,
+and reload My orders. A new private browser window can also help you see the first
+preflight. You do not need to send OPTIONS yourself; the browser sends it.
 
-Restart gateway after changing its CORS configuration. Restart Vite after changing
-its environment variables; rebuild for preview/deployed assets.
+## 6. Summary: a real e-commerce example
 
-### Allowed preflight, without a token
-
-```sh
-curl -i -X OPTIONS http://localhost:9100/api/orders/checkout \
-  -H 'Origin: http://localhost:5173' \
-  -H 'Access-Control-Request-Method: POST' \
-  -H 'Access-Control-Request-Headers: authorization,content-type'
-```
-
-Expect **200**, `Access-Control-Allow-Origin: http://localhost:5173`, an allowed
-methods list including POST, and allowed headers including authorization and
-content-type. There is no `Access-Control-Allow-Credentials: true`.
-
-### Wrong origin, method or header
-
-Repeat the command with `Origin: http://localhost:5174`. Expect **403** and no
-allow-origin header. Also try the original allowed origin with requested method
-DELETE, or requested header `x-unapproved`; each should return 403.
-Do not add these values to the policy just to make a negative test pass.
-
-### CORS success does not grant authentication
-
-```sh
-curl -i http://localhost:9100/api/orders \
-  -H 'Origin: http://localhost:5173'
-```
-
-Expect **401**, with the allowed-origin header. The browser can read that failure
-instead of reporting a misleading CORS error. A request without an Origin header
-still needs authentication. An authenticated customer denied a business permission
-should receive a readable 403; CORS does not upgrade their role.
-
-### Browser and image verification
-
-1. Open `http://localhost:5173/`, sign in as customer1, and open My orders.
-2. Filter Network for `/api/orders`. Confirm the request URL starts with
-   `http://localhost:9100`, not 5173. Inspect Origin and Authorization headers.
-3. Inspect OPTIONS if present: it requests permission to send Authorization but
-   contains no Bearer token itself. The actual GET contains the token.
-4. Open Shop with the shopping services running. Confirm product image requests
-   also target gateway on 9100 and render successfully.
-5. In Postman, repeat an authenticated identity request with `X-Auth-Roles: admin`.
-   Identity must remain the signed-in customer; header acceptance does not bypass
-   gateway's JWT-based replacement. The API helper also retains a `spoof` option
-   for programmatic learning checks; the shopping pages do not expose a checkbox.
-
-curl displays headers/status but does not enforce CORS. The browser check confirms
-the complete cross-origin behavior. Do not use `mode: 'no-cors'`: it prevents
-JavaScript reading the API response and does not solve authenticated API access.
-
-### Automated verification
-
-```sh
-mvn -f gateway-service/pom.xml test
-npm --prefix ecom-ui test
-npm --prefix ecom-ui run build
-```
-
-Use JDK 17. [GatewayCorsTest](../../gateway-service/src/test/java/com/tip/ecommerce/gateway/security/GatewayCorsTest.java)
-exercises the real Spring security chain without external services: permitted
-preflight, wrong origin/method/header, readable 401 and non-browser authentication.
-[API helper tests](../../ecom-ui/src/api.test.js) check direct destinations,
-image URLs, token headers and rejection of arbitrary destination paths.
-
-## 6. Troubleshooting
-
-| Symptom                                         | What to check                                                                   |
-| ----------------------------------------------- | ------------------------------------------------------------------------------- |
-| API request still targets 5173                  | Restart Vite/rebuild; check gatewayUrl and VITE_GATEWAY_URL.                    |
-| OPTIONS returns 403                             | Exact origin, requested method and requested headers against gateway policy.    |
-| OPTIONS returns 401                             | Confirm the updated gateway is running and security CORS integration is active. |
-| GET returns readable 401                        | CORS is working; check token expiry, issuer and audience.                       |
-| Allowed customer receives 403                   | Check business permissions/ownership; this is not automatically a CORS failure. |
-| Connection refused                              | Start/expose gateway at the configured URL; CORS cannot fix connectivity.       |
-| Login callback fails                            | Check Keycloak redirect URI/Web Origins separately.                             |
-| UI changes work locally but not in built assets | VITE_GATEWAY_URL is build-time public configuration; rebuild.                   |
-
-## 7. Summary
-
-React calls one gateway origin directly. CORS permits known browser origins and
-preflight headers; JWT establishes identity; downstream policies authorize business
-operations. Vite serves the UI and does not proxy APIs. These responsibilities
-remain separate, and CORS does not stop non-browser clients reaching exposed ports.
-
-## 8. Interview explanation: production e-commerce scenario
-
-Use this example to explain the design in 3–4 minutes. The domains are illustrative;
-the project's implementation and verification details are covered above.
-
-> Consider an e-commerce application where customers use `https://shop.example.com`,
-> while backend APIs are exposed through `https://api.example.com`. When a customer
-> opens My Orders, the browser sends a request from the shopping portal to the API
-> gateway. These addresses have different hostnames, so they are different origins.
+> Customers open the shopping site at `https://shop.example.com`. The site calls
+> APIs through `https://api.example.com`. These addresses have different hostnames,
+> so the browser treats them as different origins.
 >
-> By default, the browser restricts JavaScript from reading responses from another
-> origin. CORS allows the API to explicitly permit a trusted frontend origin. In
-> this design, I would manage that policy centrally at the gateway because it is
-> the entry point for browser API requests. This also avoids maintaining separate,
-> potentially inconsistent CORS settings in every downstream microservice.
+> When a customer opens My Orders, the frontend needs to call the order API with
+> a login token. Before this call, the browser sends an OPTIONS request. This is
+> called a preflight. It asks whether the shopping site can send the required
+> method and headers. It does not send the login token in this first request.
 >
-> For example, the My Orders request carries an Authorization header containing a
-> Bearer token. Before sending that request, the browser sends an OPTIONS preflight,
-> unless a previous preflight result is still cached. It identifies the portal's
-> origin and asks whether the intended method and headers are allowed. The
-> preflight itself does not contain the application's access token.
+> Gateway checks whether the shopping site is in its allowed origins. It also
+> checks the requested method and headers. If they are allowed, it replies with
+> CORS headers, and the browser can send the actual request with the token.
+>
+> Gateway then checks the token and sends the request to order-service with the
+> verified user details. Order-service checks which orders that customer can see
+> and returns them. Gateway adds the CORS response header so the browser lets the
+> frontend read and display the orders.
+>
+> We keep CORS settings at gateway because all browser API calls go through it.
+> This gives us one place to allow each environment's frontend address. CORS
+> controls which frontend can read a response in the browser. Token and permission
+> checks still decide who can access the data.
+>
+> The browser can remember a successful preflight for a short time, so OPTIONS
+> does not appear before every API call.
