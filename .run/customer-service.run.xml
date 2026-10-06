@@ -1,0 +1,9 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="customer-service (observable)" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="com.tip.ecommerce.customer.CustomerServiceApplication" />
+    <module name="customer-service" />
+    <option name="VM_PARAMETERS" value="-javaagent:$PROJECT_DIR$/customer-service/target/otel/opentelemetry-javaagent.jar -Dotel.javaagent.configuration-file=$PROJECT_DIR$/customer-service/src/main/resources/otel.properties" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <method v="2"><option name="Make" enabled="true" /></method>
+  </configuration>
+</component>

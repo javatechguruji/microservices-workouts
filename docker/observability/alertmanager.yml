@@ -1,0 +1,11 @@
+global:
+  resolve_timeout: 5m
+route:
+  receiver: local-ui
+  group_by: [alertname, service_name, deployment_environment_name]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+# Deliberately no external notifications. Inspect alerts in the local UI.
+receivers:
+  - name: local-ui

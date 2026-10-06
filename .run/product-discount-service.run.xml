@@ -1,0 +1,9 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="product-discount-service (observable)" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="com.tip.ecommerce.discount.ProductDiscountServiceApplication" />
+    <module name="product-discount-service" />
+    <option name="VM_PARAMETERS" value="-javaagent:$PROJECT_DIR$/product-discount-service/target/otel/opentelemetry-javaagent.jar -Dotel.javaagent.configuration-file=$PROJECT_DIR$/product-discount-service/src/main/resources/otel.properties" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <method v="2"><option name="Make" enabled="true" /></method>
+  </configuration>
+</component>

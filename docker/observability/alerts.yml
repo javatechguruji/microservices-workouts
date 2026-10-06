@@ -1,0 +1,163 @@
+groups:
+  - name: commerce
+    rules:
+      - alert: TelemetryScrapeDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Telemetry target {{ $labels.job }} is unreachable'
+          description: 'Check docker compose ps and logs; missing telemetry is not evidence of a healthy application.'
+      - alert: HighHttpErrorRate
+        expr: sum by (service_name, deployment_environment_name) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m])) / sum by (service_name, deployment_environment_name) (rate(http_server_request_duration_seconds_count[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'HTTP 5xx ratio above 5% for {{ $labels.service_name }}'
+          description: 'Open the RED dashboard, then inspect matching traces and logs.'
+      - alert: HighHttpLatency
+        expr: histogram_quantile(0.95, sum by (le, service_name, deployment_environment_name) (rate(http_server_request_duration_seconds_bucket[5m]))) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'HTTP p95 above one second for {{ $labels.service_name }}'
+          description: 'Inspect dependency spans; a completed 202 only measures acceptance, not checkout completion.'
+      - alert: CheckoutBacklog
+        expr: commerce_checkout_pending > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Checkout backlog has more than 10 pending orders'
+          description: 'Inspect worker retries, inventory/payment availability, and database locks.'
+      - alert: OutboxBacklog
+        expr: commerce_outbox_pending > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Unpublished outbox backlog in {{ $labels.service_name }}'
+          description: 'Inspect publisher logs and Kafka availability. Retries may publish duplicates; consumers must deduplicate.'
+      - alert: BusinessMetricSnapshotStale
+        expr: time() - commerce_metrics_last_success_seconds > 60
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Business metric snapshot is stale in {{ $labels.service_name }}'
+          description: 'Check database connectivity and metric refresh logs; retained gauge values can be stale.'
+      - alert: KafkaConsumerLag
+        expr: sum by (consumergroup) (kafka_consumergroup_lag) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Kafka consumer group {{ $labels.consumergroup }} is falling behind'
+          description: 'Check listener failures, processing duration and partition ownership.'
+      - alert: SharedDatabaseUnavailable
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Shared PostgreSQL is unavailable to its exporter'
+      - alert: SharedRedisUnavailable
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Shared Redis is unavailable to its exporter'
+      - alert: ApplicationTelemetryMissing
+        expr: absent_over_time(jvm_memory_used_bytes{service_name="customer-service",deployment_environment_name="local"}[3m])
+        for: 2m
+        labels:
+          severity: warning
+          service_name: customer-service
+          deployment_environment_name: local
+        annotations:
+          summary: 'No recent JVM telemetry from customer-service'
+          description: 'Start the observable run configuration; check agent attachment and Collector reachability. Expected when intentionally stopped.'
+      - alert: ApplicationTelemetryMissing
+        expr: absent_over_time(jvm_memory_used_bytes{service_name="gateway-service",deployment_environment_name="local"}[3m])
+        for: 2m
+        labels:
+          severity: warning
+          service_name: gateway-service
+          deployment_environment_name: local
+        annotations:
+          summary: 'No recent JVM telemetry from gateway-service'
+          description: 'Start the observable run configuration; check agent attachment and Collector reachability. Expected when intentionally stopped.'
+      - alert: ApplicationTelemetryMissing
+        expr: absent_over_time(jvm_memory_used_bytes{service_name="inventory-service",deployment_environment_name="local"}[3m])
+        for: 2m
+        labels:
+          severity: warning
+          service_name: inventory-service
+          deployment_environment_name: local
+        annotations:
+          summary: 'No recent JVM telemetry from inventory-service'
+          description: 'Start the observable run configuration; check agent attachment and Collector reachability. Expected when intentionally stopped.'
+      - alert: ApplicationTelemetryMissing
+        expr: absent_over_time(jvm_memory_used_bytes{service_name="notification-service",deployment_environment_name="local"}[3m])
+        for: 2m
+        labels:
+          severity: warning
+          service_name: notification-service
+          deployment_environment_name: local
+        annotations:
+          summary: 'No recent JVM telemetry from notification-service'
+          description: 'Start the observable run configuration; check agent attachment and Collector reachability. Expected when intentionally stopped.'
+      - alert: ApplicationTelemetryMissing
+        expr: absent_over_time(jvm_memory_used_bytes{service_name="order-service",deployment_environment_name="local"}[3m])
+        for: 2m
+        labels:
+          severity: warning
+          service_name: order-service
+          deployment_environment_name: local
+        annotations:
+          summary: 'No recent JVM telemetry from order-service'
+          description: 'Start the observable run configuration; check agent attachment and Collector reachability. Expected when intentionally stopped.'
+      - alert: ApplicationTelemetryMissing
+        expr: absent_over_time(jvm_memory_used_bytes{service_name="payment-service",deployment_environment_name="local"}[3m])
+        for: 2m
+        labels:
+          severity: warning
+          service_name: payment-service
+          deployment_environment_name: local
+        annotations:
+          summary: 'No recent JVM telemetry from payment-service'
+          description: 'Start the observable run configuration; check agent attachment and Collector reachability. Expected when intentionally stopped.'
+      - alert: ApplicationTelemetryMissing
+        expr: absent_over_time(jvm_memory_used_bytes{service_name="product-aggregator-service",deployment_environment_name="local"}[3m])
+        for: 2m
+        labels:
+          severity: warning
+          service_name: product-aggregator-service
+          deployment_environment_name: local
+        annotations:
+          summary: 'No recent JVM telemetry from product-aggregator-service'
+          description: 'Start the observable run configuration; check agent attachment and Collector reachability. Expected when intentionally stopped.'
+      - alert: ApplicationTelemetryMissing
+        expr: absent_over_time(jvm_memory_used_bytes{service_name="product-discount-service",deployment_environment_name="local"}[3m])
+        for: 2m
+        labels:
+          severity: warning
+          service_name: product-discount-service
+          deployment_environment_name: local
+        annotations:
+          summary: 'No recent JVM telemetry from product-discount-service'
+          description: 'Start the observable run configuration; check agent attachment and Collector reachability. Expected when intentionally stopped.'
+      - alert: ApplicationTelemetryMissing
+        expr: absent_over_time(jvm_memory_used_bytes{service_name="rating-service",deployment_environment_name="local"}[3m])
+        for: 2m
+        labels:
+          severity: warning
+          service_name: rating-service
+          deployment_environment_name: local
+        annotations:
+          summary: 'No recent JVM telemetry from rating-service'
+          description: 'Start the observable run configuration; check agent attachment and Collector reachability. Expected when intentionally stopped.'
