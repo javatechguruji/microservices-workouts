@@ -39,13 +39,19 @@ traces failure recovery across the actual service clients and checkout participa
 walkthrough. Security-specific negative tests remain in the security guide.
 [Future topics](../Topics.md) distinguish planned work from code that exists.
 
+## Observability: logs, metrics, traces and alerts
+
+Start with [logs, metrics and tracing](observability/01-logs-metrics-and-tracing.md),
+then read the [setup and operations guide](infra-setup/observability-implementation-guide.md).
+The shared-infra stack and all nine services are instrumented; the setup guide includes repeatable live checks.
+
 ## Reading conventions
 
 - **Implemented** means present in the repository; it does not assert a live deployment.
 - Source-linked snippets are excerpts of the named files. Omitted surrounding code
   includes constructors, validation or error paths; use the source for the full contract.
 - **Future exercise** means no current implementation. In particular, Redis rate
-  limiting, circuit breakers, HPA, Ingress/TLS, tracing and Jenkins are not configured.
+  limiting, circuit breakers, HPA, Ingress/TLS and Jenkins are not configured.
 - Diagrams show logical calls, not separate physical databases/servers for every box.
   PostgreSQL is shared infrastructure with service-owned databases.
 - Shopping checkout and the older amount-only payment lab are different flows.

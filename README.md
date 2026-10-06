@@ -37,7 +37,8 @@ See [IntelliJ and Maven setup](docs/infra-setup/intellij-maven-setup.md).
 ## Deployment boundary
 
 Root Compose runs **shared-infra only**: PostgreSQL, Kafka, Kafka UI, Redis and
-Keycloak. Applications run in IntelliJ now. Future Jenkins deployments use
+Keycloak, OpenTelemetry Collector, Prometheus, Loki, Tempo, Grafana, Alertmanager
+and PostgreSQL/Redis/Kafka metric exporters. Applications run in IntelliJ now. Future Jenkins deployments use
 [application manifests](k8s/README.md) in Minikube with the same infrastructure.
 No Jenkins pipeline is implemented. Redis is installed but not used by application
 code. [docker/](docker/README.md) contains support files and local product images.
@@ -45,3 +46,11 @@ code. [docker/](docker/README.md) contains support files and local product image
 All application HTTP goes through gateway. Downstream services trust its headers
 and apply permission/owner/tenant checks; direct local ports remain a deliberate
 POC bypass. Kafka processing is independent of HTTP authentication.
+
+## Observability
+
+[Setup, dashboards and verification](docs/infra-setup/observability-implementation-guide.md)
+cover all nine services. Build with `mvn test package`, then select the shared
+`SERVICE (observable)` IntelliJ run configurations. Grafana is at
+http://localhost:3000/d/commerce-overview. Learn the design and interview examples
+in [logs, metrics and traces](docs/observability/01-logs-metrics-and-tracing.md).

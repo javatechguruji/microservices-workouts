@@ -22,6 +22,12 @@ spec:
           ports:
             - containerPort: 9105
           env:
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://host.minikube.internal:4318
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=ecommerce,deployment.environment.name=stage
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: "1.0"
             - name: SPRING_PROFILES_ACTIVE
               value: k8s
           startupProbe:

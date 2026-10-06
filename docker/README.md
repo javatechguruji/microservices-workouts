@@ -26,3 +26,11 @@ volumes when applying changes.
 [Setup guides](../docs/infra-setup/README.md) own installation and credentials.
 [Concept guides](../docs/README.md) explain the service implementations. Microservice
 Dockerfiles live in each service; [k8s](../k8s/README.md) holds future deployment inputs.
+
+## Observability
+
+See [observability setup](../docs/infra-setup/observability-implementation-guide.md) for the shared-infra Collector,
+Prometheus, Loki, Tempo, Grafana and Alertmanager, infrastructure exporters,
+agent-enabled IntelliJ/Maven/Docker startup, and validation. Rebuild images for
+Minikube: the Docker entrypoint attaches the agent and manifests send OTLP to
+`host.minikube.internal:4318`. No observability servers belong in `k8s/`.

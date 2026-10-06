@@ -70,7 +70,11 @@ public class CommerceScheduler {
             .get(12, java.util.concurrent.TimeUnit.SECONDS);
         db.update(
             "UPDATE commerce_outbox SET published=true WHERE event_id=?", row.get("event_id"));
+        org.slf4j.LoggerFactory.getLogger(getClass()).info(
+            "Outbox publication recorded: eventId={}", row.get("event_id"));
       } catch (Exception e) {
+        org.slf4j.LoggerFactory.getLogger(getClass()).warn(
+            "Outbox publication will retry: eventId={} reason={}", row.get("event_id"), e.getClass().getSimpleName());
         if (e instanceof InterruptedException) Thread.currentThread().interrupt();
         break;
       }

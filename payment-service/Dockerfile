@@ -8,5 +8,7 @@ RUN mvn -q -B -DskipTests clean package
 FROM eclipse-temurin:17-jre
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
+COPY --from=build /app/target/otel/opentelemetry-javaagent.jar /app/otel-agent.jar
+COPY --from=build /app/src/main/resources/otel.properties /app/otel.properties
 EXPOSE 9102
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-javaagent:/app/otel-agent.jar", "-Dotel.javaagent.configuration-file=/app/otel.properties", "-jar", "app.jar"]

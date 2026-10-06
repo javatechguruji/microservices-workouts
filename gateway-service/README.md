@@ -45,3 +45,11 @@ Routes use `spring.cloud.gateway.server.webflux.routes`, and Maven uses
 `spring-cloud-starter-gateway-server-webflux`, matching this project's Spring Cloud
 2025.0 / Gateway 4.3 release line. The older names are deprecated compatibility aliases.
 See the [Spring Cloud release notes](https://github.com/spring-cloud/spring-cloud-release/wiki/Spring-Cloud-2025.0-Release-Notes).
+
+## Observability
+
+Use the shared `gateway-service (observable)` IntelliJ run configuration after
+`mvn process-resources`, or `mvn spring-boot:run` from this module. The pinned
+OpenTelemetry agent exports HTTP/JVM/Micrometer metrics, traces and Logback logs
+to the shared Collector. Docker images attach the same agent automatically.
+See [setup, dashboards and interview examples](../docs/infra-setup/observability-implementation-guide.md).

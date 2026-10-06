@@ -19,3 +19,11 @@ Current tags such as `stage3`/`stage6` must be replaced with the pipeline's buil
 image references. There is no HPA, Ingress/TLS, NetworkPolicy or mTLS configuration.
 ClusterIP alone does not enforce gateway-only access. Jenkins-only deployment
 permissions will require pipeline credentials and Kubernetes RBAC when implemented.
+
+## Observability
+
+See [observability setup](../docs/infra-setup/observability-implementation-guide.md) for the shared-infra Collector,
+Prometheus, Loki, Tempo, Grafana and Alertmanager, infrastructure exporters,
+agent-enabled IntelliJ/Maven/Docker startup, and validation. Rebuild images for
+Minikube: the Docker entrypoint attaches the agent and manifests send OTLP to
+`host.minikube.internal:4318`. No observability servers belong in `k8s/`.

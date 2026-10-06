@@ -6,7 +6,7 @@ for concepts, code excerpts and business verification.
 ## Deployment model
 
 The root [docker-compose.yml](../../docker-compose.yml) owns **shared-infra**:
-PostgreSQL, Kafka, Kafka UI, Redis and Keycloak only. Run applications in IntelliJ
+PostgreSQL, Kafka, Kafka UI, Redis, Keycloak and the observability stack. Run applications in IntelliJ
 with `local`. Future Jenkins deployments use `k8s` in Minikube and the **same**
 infrastructure instances. There are no infrastructure servers in `k8s/`.
 
@@ -17,6 +17,7 @@ infrastructure instances. There are no infrastructure servers in `k8s/`.
 | Kafka UI     | [Setup](kafka-ui-setup.md)                                 | http://localhost:8089        | Browser tool, not an application dependency        |
 | Keycloak     | [Setup and credentials](keycloak-setup.md)                 | http://localhost:8180        | http://host.minikube.internal:8180 for backchannel |
 | Redis        | [Setup and password](redis-setup.md)                       | localhost:6379               | host.minikube.internal:6379                        |
+| Observability | [Setup, credentials and verification](observability-implementation-guide.md) | Grafana localhost:3000; OTLP localhost:4318 | OTLP host.minikube.internal:4318 |
 | Applications | [IntelliJ, frontend and database setup](commerce-setup.md) | Nine Java services and React | [Future Jenkins/Minikube setup](minikube-setup.md) |
 
 ## First startup or existing-volume upgrade

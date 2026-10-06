@@ -219,3 +219,11 @@ a Kubernetes service name such as `gateway-service` is not a browser-facing addr
 For local minikube access, port-forward gateway to 9100 as described in
 [minikube setup](minikube-setup.md). Keycloak redirect URIs and Web Origins remain
 separate configuration in [Keycloak setup](keycloak-setup.md).
+
+## Observability
+
+See [observability setup](observability-implementation-guide.md) for the shared-infra Collector,
+Prometheus, Loki, Tempo, Grafana and Alertmanager, infrastructure exporters,
+agent-enabled IntelliJ/Maven/Docker startup, and validation. Rebuild images for
+Minikube: the Docker entrypoint attaches the agent and manifests send OTLP to
+`host.minikube.internal:4318`. No observability servers belong in `k8s/`.

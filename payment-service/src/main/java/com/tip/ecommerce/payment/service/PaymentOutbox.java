@@ -32,7 +32,11 @@ public class PaymentOutbox {
                     id, ((Number) row.get("payment_id")).longValue(), "SUCCESS"))
             .get(10, java.util.concurrent.TimeUnit.SECONDS);
         db.update("UPDATE payment_outbox SET published=true WHERE order_id=?", id);
+        org.slf4j.LoggerFactory.getLogger(getClass()).info(
+            "Outbox publication recorded: eventId={}", id);
       } catch (Exception e) {
+        org.slf4j.LoggerFactory.getLogger(getClass()).warn(
+            "Outbox publication will retry: eventId={} reason={}", id, e.getClass().getSimpleName());
         if (e instanceof InterruptedException) Thread.currentThread().interrupt();
         break;
       }

@@ -9,11 +9,13 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class CheckoutWorker {
+  private final io.micrometer.core.instrument.MeterRegistry metrics;
   private final JdbcTemplate db;
   private final CommerceGateway gateway;
   private final CheckoutService checkout;
 
-  public CheckoutWorker(JdbcTemplate db, CommerceGateway gateway, CheckoutService checkout) {
+  public CheckoutWorker(JdbcTemplate db, CommerceGateway gateway, CheckoutService checkout, io.micrometer.core.instrument.MeterRegistry metrics) {
+    this.metrics = metrics;
     this.db = db;
     this.gateway = gateway;
     this.checkout = checkout;
@@ -61,6 +63,9 @@ public class CheckoutWorker {
           next,
           id);
     } catch (ResponseStatusException e) {
+      metrics.counter("commerce.checkout.attempt.failures", "state", state).increment();
+      org.slf4j.LoggerFactory.getLogger(getClass()).warn(
+          "Checkout attempt failed: orderId={} state={} status={}", id, state, e.getStatusCode().value());
       if (state.equals("CREATED") && e.getStatusCode().value() == 409) {
         db.update(
             "UPDATE checkout SET state='FAILED',error='One or more items are out of stock' WHERE"

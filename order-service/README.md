@@ -14,3 +14,11 @@ not a Docker Compose workload. Consult the concept guide for implemented behavio
 and limitations rather than treating the realm's permission names as an endpoint list.
 
 - [Order-service Swagger reference](../docs/api/order-service-swagger.md): read-only endpoint documentation.
+
+## Observability
+
+Use the shared `order-service (observable)` IntelliJ run configuration after
+`mvn process-resources`, or `mvn spring-boot:run` from this module. The pinned
+OpenTelemetry agent exports HTTP/JVM/Micrometer metrics, traces and Logback logs
+to the shared Collector. Docker images attach the same agent automatically.
+See [setup, dashboards and interview examples](../docs/infra-setup/observability-implementation-guide.md).

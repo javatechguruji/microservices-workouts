@@ -31,7 +31,8 @@ registry workflow and a verified Minikube rollout remain future work; see
 - Redis caching/rate limiting with explicit keys, invalidation and outage policy.
 - Circuit breakers, bounded retry escalation, poison-event/DLQ handling and replay.
 - Publisher coordination, schema evolution, outbox cleanup and migration tooling.
-- Distributed tracing, structured business metrics and correlation propagation.
+- Production observability extensions: durable trace-context links across outboxes, SLO-based paging and HA storage.
+  Local logs, metrics, tracing, backlog gauges and alerts are [implemented](docs/infra-setup/observability-implementation-guide.md).
 - NetworkPolicy/mTLS or downstream token verification; real secret management.
 - Jenkins automation, image tagging, HPA/resource budgets, Ingress/TLS and rollout checks.
 - Real payments/refunds, cancellation, carrier integration, search/pagination and review writing.

@@ -12,3 +12,11 @@ Exact-amount simulated payments, duplicate protection and a transactional paymen
 Run locally with IntelliJ; future deployment goes through Jenkins. This service is
 not a Docker Compose workload. Consult the concept guide for implemented behavior
 and limitations rather than treating the realm's permission names as an endpoint list.
+
+## Observability
+
+Use the shared `payment-service (observable)` IntelliJ run configuration after
+`mvn process-resources`, or `mvn spring-boot:run` from this module. The pinned
+OpenTelemetry agent exports HTTP/JVM/Micrometer metrics, traces and Logback logs
+to the shared Collector. Docker images attach the same agent automatically.
+See [setup, dashboards and interview examples](../docs/infra-setup/observability-implementation-guide.md).

@@ -38,6 +38,6 @@ class GatewayServiceApplicationTests {
     assertThat(environment.getProperty("security.cors.allowed-origins"))
         .isEqualTo("http://localhost:5173");
     assertThat(environment.getProperty("logging.level.org.springframework.cloud.gateway"))
-        .isEqualTo(k8s ? "INFO" : "DEBUG");
+        .isEqualTo("INFO");
   }
 }

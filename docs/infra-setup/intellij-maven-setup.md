@@ -115,3 +115,11 @@ Use `clean` after renaming a main class so old compiled `Application.class` file
 cannot remain alongside the new entry point and confuse executable-jar packaging.
 `-DskipTests` skips test execution, not test compilation; it is not proof that
 business or integration tests pass. Root builds do not build the React frontend.
+
+## Observability
+
+See [observability setup](observability-implementation-guide.md) for the shared-infra Collector,
+Prometheus, Loki, Tempo, Grafana and Alertmanager, infrastructure exporters,
+agent-enabled IntelliJ/Maven/Docker startup, and validation. Rebuild images for
+Minikube: the Docker entrypoint attaches the agent and manifests send OTLP to
+`host.minikube.internal:4318`. No observability servers belong in `k8s/`.

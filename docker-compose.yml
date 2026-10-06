@@ -118,6 +118,99 @@ services:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
 
+
+  # All observability backends belong to shared-infra; apps remain in IntelliJ/Minikube.
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.139.0
+    restart: unless-stopped
+    user: "0:0" # File-backed export queues live in this dedicated named volume.
+    command: ["--config=/etc/otelcol/config.yml"]
+    ports:
+      - "4317:4317"
+      - "4318:4318" # Also reachable by host.minikube.internal; trusted development network only.
+      - "127.0.0.1:13133:13133"
+    volumes:
+      - ./docker/observability/otel-collector.yml:/etc/otelcol/config.yml:ro
+      - otel-data:/var/lib/otelcol
+    depends_on: [tempo, loki]
+    mem_limit: 512m
+
+  prometheus:
+    image: prom/prometheus:v3.8.0
+    restart: unless-stopped
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--storage.tsdb.retention.time=7d", "--storage.tsdb.retention.size=2GB", "--enable-feature=exemplar-storage"]
+    ports: ["127.0.0.1:9090:9090"]
+    volumes:
+      - ./docker/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docker/observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    depends_on: [otel-collector, alertmanager]
+
+  loki:
+    image: grafana/loki:3.6.3
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/config.yml"]
+    ports: ["127.0.0.1:3100:3100"]
+    volumes:
+      - ./docker/observability/loki.yml:/etc/loki/config.yml:ro
+      - loki-data:/loki
+
+  tempo:
+    image: grafana/tempo:2.9.0
+    restart: unless-stopped
+    user: "0:0" # Local filesystem backend on a dedicated named volume.
+    command: ["-config.file=/etc/tempo/config.yml"]
+    ports: ["127.0.0.1:3200:3200"]
+    volumes:
+      - ./docker/observability/tempo.yml:/etc/tempo/config.yml:ro
+      - tempo-data:/var/tempo
+
+  grafana:
+    image: grafana/grafana:12.3.1
+    restart: unless-stopped
+    ports: ["127.0.0.1:3000:3000"]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-WorkoutsGrafana-Local-2026!}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./docker/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on: [prometheus, loki, tempo]
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    restart: unless-stopped
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml", "--storage.path=/alertmanager"]
+    ports: ["127.0.0.1:9093:9093"]
+    volumes:
+      - ./docker/observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.18.1
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: postgresql://postgres:postgres@postgres:5432/postgres?sslmode=disable
+    depends_on: [postgres]
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.80.1
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: "WorkoutsRedis-LocalStage-2026!"
+    depends_on: [redis]
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.9.0
+    restart: unless-stopped
+    command: ["--kafka.server=kafka:29092", "--kafka.version=3.8.0"]
+    depends_on: [kafka]
+
 volumes:
   redis-data:
     name: workouts-redis-data
@@ -127,3 +220,9 @@ volumes:
   kafka-data:
     name: workouts-kafka-data
     external: true
+  prometheus-data:
+  loki-data:
+  tempo-data:
+  grafana-data:
+  otel-data:
+  alertmanager-data:
