@@ -5,12 +5,14 @@ import com.tip.ecommerce.payment.dto.CreatePaymentRequest;
 import com.tip.ecommerce.payment.dto.PaymentDto;
 import com.tip.ecommerce.payment.entity.Payment;
 import com.tip.ecommerce.payment.entity.PaymentStatus;
+import com.tip.ecommerce.payment.observability.OperationalLog;
 import com.tip.ecommerce.payment.repository.PaymentRepository;
 import com.tip.ecommerce.payment.service.PaymentService;
 import java.math.BigDecimal;
 import java.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.event.Level;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -50,6 +52,16 @@ public class PaymentServiceImpl implements PaymentService {
     if (previous.isPresent()) {
       if (previous.get().getAmount().compareTo(request.amount()) != 0)
         throw new ResponseStatusException(HttpStatus.CONFLICT, "Payment amount differs");
+      OperationalLog.write(
+          log,
+          Level.INFO,
+          "payment.replayed",
+          "orderId",
+          request.orderId(),
+          "amount",
+          request.amount(),
+          "paymentId",
+          previous.get().getId());
       return toDto(previous.get());
     }
     var order = orderServiceClient.getOrder(request.orderId());
@@ -71,6 +83,17 @@ public class PaymentServiceImpl implements PaymentService {
         payment.getOrderId(),
         payment.getId());
 
+    OperationalLog.afterCommit(
+        log,
+        "payment.completed",
+        "orderId",
+        payment.getOrderId(),
+        "paymentId",
+        payment.getId(),
+        "amount",
+        payment.getAmount(),
+        "status",
+        payment.getStatus());
     return toDto(payment);
   }
 

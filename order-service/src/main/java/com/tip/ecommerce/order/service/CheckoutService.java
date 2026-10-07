@@ -3,11 +3,13 @@ package com.tip.ecommerce.order.service;
 import com.fasterxml.jackson.databind.*;
 import com.tip.ecommerce.order.client.CommerceGateway;
 import com.tip.ecommerce.order.entity.*;
+import com.tip.ecommerce.order.observability.OperationalLog;
 import com.tip.ecommerce.order.repository.OrderRepository;
 import com.tip.ecommerce.order.security.Caller;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
+import org.slf4j.event.Level;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -16,6 +18,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class CheckoutService {
+  private static final org.slf4j.Logger LOG =
+      org.slf4j.LoggerFactory.getLogger(CheckoutService.class);
   private final JdbcTemplate db;
   private final OrderRepository orders;
   private final CommerceGateway gateway;
@@ -89,6 +93,14 @@ public class CheckoutService {
       if (!existing.get(0).get("request_hash").equals(fingerprint))
         throw new ResponseStatusException(
             HttpStatus.CONFLICT, "Checkout key already used for a different cart");
+      OperationalLog.write(
+          LOG,
+          Level.INFO,
+          "checkout.replayed",
+          "orderId",
+          existing.get(0).get("order_id"),
+          "expectedAmount",
+          req.expectedAmount());
       return detail(((Number) existing.get(0).get("order_id")).longValue(), caller);
     }
     var profile =
@@ -136,6 +148,17 @@ public class CheckoutService {
         req.idempotencyKey(),
         fingerprint,
         req.address().strip());
+    OperationalLog.afterCommit(
+        LOG,
+        "checkout.accepted",
+        "orderId",
+        order.getId(),
+        "amount",
+        order.getAmount(),
+        "state",
+        "CREATED",
+        "items",
+        OperationalLog.summary(req.items()));
     return detail(order.getId(), caller);
   }
 
@@ -177,6 +200,8 @@ public class CheckoutService {
     db.update("UPDATE checkout SET state=?,tracking=? WHERE order_id=?", target, "ECOM-" + id, id);
     db.update("UPDATE orders SET status=? WHERE id=?", target, id);
     event(id, target);
+    OperationalLog.afterCommit(
+        LOG, "checkout.state.changed", "orderId", id, "previousState", state, "state", target);
     var result = detail(id, caller);
     result.put("status", target);
     return result;

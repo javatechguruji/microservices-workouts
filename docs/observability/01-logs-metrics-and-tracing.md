@@ -6,9 +6,21 @@ credentials are in the [setup guide](../infra-setup/observability-implementation
 
 ## 1. Why observability?
 
-A healthy service and a `202 Accepted` response do not prove checkout finished.
-**Metrics** reveal growing waiting work, **traces** identify slow or failed steps,
-and **logs** explain individual events. Use them together to investigate.
+One customer action can involve several microservices. If a customer says,
+“My order is stuck,” observability helps us find out what happened:
+
+1. **Metrics — how big is the problem?** Check traffic, slow requests, HTTP 500
+   errors and waiting orders. This helps us see whether the problem looks isolated
+   or failures are increasing across the application.
+2. **Traces — where did it go wrong?** Find a trace for the API around the reported
+   time. Its **Trace ID** connects the recorded steps; each step, called a **span**,
+   has its own Span ID. The timeline shows service calls, database calls and Kafka
+   work, helping us spot a slow or failed step—for example, an inventory call.
+3. **Logs — what happened there?** Use the Trace ID and service name to find the
+   matching logs. Read the error details to understand the failure and decide
+   what to fix. Use the order ID to follow later work that has a separate trace.
+
+Remember: **Metrics show the scale → traces locate the step → logs explain the event.**
 
 ## 2. Interview recap: diagram, responsibilities and tracing flow
 
@@ -58,14 +70,39 @@ For deeper reference: [Concept](#3-concept) · [Implementation](#4-implementatio
 | Grafana | Queries those stores and displays logs, charts and trace timelines. |
 | Alertmanager | Groups and routes alerts evaluated by Prometheus. Our setup has no email or Slack receiver configured. |
 
+### Metrics: common questions
+
+**Do I need code to measure an API's response time?** Usually no. With the agent
+attached and supported HTTP recording enabled, request timing is recorded for us.
+Spring Boot also sets up built-in measurements through Micrometer. Micrometer
+provides the Java methods and registry (a collection of named measurements).
+Custom code is needed for business questions such as “how many checkouts are waiting?”
+
+**What does p95 = 2 seconds mean?** Roughly 95 out of 100 requests finished within
+2 seconds; the slowest 5 took longer. It helps reveal slowness that an average can
+hide. Our histogram-based p95 is an estimate.
+
 ### Metrics: terms that matter
 
 | Term | Meaning / example |
 | --- | --- |
-| Counter | Cumulative events, such as failed checkout attempts; use `rate()` for events per second. A process restart can reset it. |
+| Counter | Running total of events, such as failed checkout attempts; use `rate()` for events per second. A process restart can reset it. |
 | Gauge | A current value that can rise or fall, such as pending checkouts. |
 | Histogram / p95 | Duration buckets / estimated duration at or below which 95% of observations fall. Combine buckets before calculating p95 across replicas. |
-| Cardinality | Number of distinct label combinations. Keep order IDs in logs, not metric labels, to avoid creating a time series per order. |
+| Cardinality | Number of different label combinations (separate measurement histories). Keep order IDs in logs, not metric labels, to avoid creating a time series per order. |
+
+### Tracing: common questions
+
+**Trace ID versus Span ID?** The Trace ID identifies a connected journey. Each
+recorded operation in it has a different Span ID. A database query and an HTTP
+call can each be a span; a span is not the same thing as an entire service.
+
+**Does `traceparent` contain only the Trace ID?** No. It includes a format version,
+the Trace ID, the calling span's ID and flags, including the sampling flag.
+For example, an outgoing client span with Trace `ABC` / Span `100` can lead to a
+receiving server span with Trace `ABC` / Span `200` / Parent `100`.
+These shortened IDs are illustrative. The parent link tells the trace viewer
+which operation led to the next one.
 
 ### Tracing and background work
 
@@ -137,9 +174,50 @@ Logstash server. Logs include order/event IDs for investigation; avoid tokens,
 addresses and full sensitive payloads. Trace IDs are available when logging within
 an active tracing context, not necessarily in startup logs.
 
-**Business metrics:** The agent cannot infer what a waiting checkout means.
+**What our logs now contain:**
+
+| Level | Events |
+| --- | --- |
+| INFO | Checkout accepted/state changes, completed payment, HTTP writes with safe request/response summaries, and Kafka publication/handling. |
+| DEBUG | Routine HTTP reads, outgoing request starts and detailed safe responses. Enable with `APP_LOG_LEVEL=DEBUG` in the service's IntelliJ environment variables, then restart it. |
+| WARN | Rejected requests and retryable dependency failures, including the order amount, current checkout state and retry delay. |
+| ERROR | HTTP 5xx responses, unexpected worker errors and failed Kafka handlers. |
+
+Events use labels such as `event`, `orderId`, `amount`, `state`, `path`, `status`,
+`durationMs` and `failure`. Payload summaries keep selected business fields such
+as amount, SKU and quantity. They omit addresses, customer identities, credentials,
+headers and arbitrary error-body text; lists and strings are capped. The gateway
+logs routing/status metadata; the services log the safe business payloads.
+Database state-change success events are written after the transaction commits.
+
+After restarting with the new code, a stopped inventory service produces an order
+log like this (illustrative):
+
+```text
+event=checkout.dependency.failed data={"orderId":42,"amount":22.50,"state":"CREATED","dependency":"inventory-service","status":503,"attempt":3,"retryInSeconds":10,"nextAction":"RETRY",...}
+```
+
+In **Grafana → Explore → Loki**, find these failures with:
+
+```logql
+{service_name="order-service"} |= "checkout.dependency.failed"
+```
+
+Add `|= "\"orderId\":42,"` for a specific order, or `|= "\"amount\":22.50,"`
+for an amount as displayed in that log. Order ID is the better identifier because
+several orders can have the same amount. Logs from before this change do not gain
+these fields. Trace IDs still come from the agent's active trace; no separate
+request ID or manually invented Trace ID is added.
+
+**Business metrics:** The agent cannot know what our business calls a waiting checkout.
 Our [order CommerceMetrics](../../order-service/src/main/java/com/tip/ecommerce/order/observability/CommerceMetrics.java)
-queries unfinished rows and registers their cached count with Micrometer:
+uses `JdbcTemplate` to count unfinished database rows and registers the saved
+count with Micrometer. Micrometer does not run this business query for us.
+If the count is 7, the gauge reports 7:
+
+`Database → CommerceMetrics → Micrometer gauge → agent → Collector → Prometheus → Grafana`
+
+Prometheus reads the gauge from the Collector; the arrows show where the value travels.
 
 ```java
 // Excerpt: register a gauge that reads the cached count.
@@ -153,6 +231,17 @@ uses the same approach for its outbox. A failed read retains the previous count
 and last-success timestamp; always check data age alongside the count.
 Replicas may count the same database rows, so use `max`, not `sum`, for this backlog.
 A failure counter counts attempts, not unique failed orders, and does not fall after success.
+
+**How would I count checkouts waiting more than 3 seconds?** This is a possible
+extension, not what our current gauge measures. Save when waiting began, then
+count unfinished rows whose start time is more than 3 seconds ago. A checkout
+that started at 10:00:00 has waited 5 seconds at 10:00:05.
+
+**What if there is no start time?** A status alone tells us that work is waiting,
+not how long it has waited. We need a saved start time or reliable event history.
+Our current checkout table has a retry time (`next_attempt`), which is not the
+waiting start time. Also, a gauge refreshed every 15 seconds would not provide
+an immediate alert when a checkout crosses a 3-second threshold.
 
 ### 4.4. Useful PromQL queries
 
@@ -192,6 +281,21 @@ Missing data is not zero. Low traffic can make rate and p95 charts empty or unst
 
 ### 5.1. Check all three signals in Grafana
 
+Use the existing Commerce dashboard to answer these questions:
+
+| Look at | Question |
+| --- | --- |
+| HTTP request rate | How much traffic is arriving? |
+| HTTP p95 latency | Are requests taking too long? |
+| HTTP 5xx ratio | What share of HTTP responses are server errors? |
+| JVM heap used | How much Java object memory is being used? |
+| Pending checkouts / outbox rows | How much business work is waiting? |
+| Business metric refresh age | Is the waiting-work count still being updated? |
+
+CPU, threads, garbage collection and database connection-pool usage are also useful
+measurements to explore when exposed. They are not all panels in our current dashboard.
+
+
 Start infrastructure, all nine services with their **observable** configurations,
 and the UI using the [setup guide](../infra-setup/observability-implementation-guide.md).
 
@@ -203,9 +307,9 @@ and the UI using the [setup guide](../infra-setup/observability-implementation-g
    Open a recent `GET /api/products` trace and inspect the connected service spans.
 4. Place an order, note its order ID, and inspect pending checkouts and refresh age
    using section 4.4. A finished checkout can already show zero pending.
-5. In **Explore → Loki**, run `{service_name="order-service"} |= "eventId="`.
+5. In **Explore → Loki**, run `{service_name="order-service"} |= "kafka.publish.recorded"`.
    Match an event near your order's time and follow its **TraceID** link to Tempo.
-   For a failure log, search `|= "orderId=42 "`, replacing 42 with your ID.
+   For a failure log, search `|= "\"orderId\":42,"`, replacing 42 with your ID.
    Not every successful request produces an application log.
 
 If results are empty, check the time range, environment, service filter, agent

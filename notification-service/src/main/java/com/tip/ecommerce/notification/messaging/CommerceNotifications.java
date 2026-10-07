@@ -1,6 +1,8 @@
 package com.tip.ecommerce.notification.messaging;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tip.ecommerce.notification.observability.OperationalLog;
+import org.slf4j.event.Level;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
@@ -21,6 +23,45 @@ public class CommerceNotifications {
       groupId = "commerce-notifications-v1",
       properties = {"value.deserializer=org.apache.kafka.common.serialization.StringDeserializer"})
   public void receive(String payload, Acknowledgment ack) throws Exception {
+    var logger = org.slf4j.LoggerFactory.getLogger(getClass());
+    Object safePayload = OperationalLog.jsonSummary(payload);
+    OperationalLog.write(
+        logger,
+        Level.DEBUG,
+        "kafka.consume.started",
+        "topic",
+        "commerce-order-events",
+        "payload",
+        safePayload);
+    boolean handled = false;
+    try {
+      handleLogged(payload, ack);
+      handled = true;
+    } catch (Exception failure) {
+      OperationalLog.write(
+          logger,
+          Level.ERROR,
+          "kafka.consume.failed",
+          "topic",
+          "commerce-order-events",
+          "payload",
+          safePayload,
+          "failure",
+          OperationalLog.failure(failure));
+      throw failure;
+    } finally {
+      if (handled)
+        OperationalLog.afterCommit(
+            logger,
+            "kafka.consume.handled",
+            "topic",
+            "commerce-order-events",
+            "payload",
+            safePayload);
+    }
+  }
+
+  private void handleLogged(String payload, Acknowledgment ack) throws Exception {
     var e = json.readTree(payload);
     db.update(
         "INSERT INTO notification_inbox(event_id,tenant,customer_id,order_id,status,created_at)"

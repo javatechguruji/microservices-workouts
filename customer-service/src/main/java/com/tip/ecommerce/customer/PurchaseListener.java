@@ -1,6 +1,8 @@
 package com.tip.ecommerce.customer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tip.ecommerce.customer.observability.OperationalLog;
+import org.slf4j.event.Level;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
@@ -19,6 +21,45 @@ public class PurchaseListener {
   @KafkaListener(topics = "commerce-order-events", groupId = "customer-preferences-v1")
   @Transactional(rollbackFor = Exception.class)
   public void receive(String body) throws Exception {
+    var logger = org.slf4j.LoggerFactory.getLogger(getClass());
+    Object safePayload = OperationalLog.jsonSummary(body);
+    OperationalLog.write(
+        logger,
+        Level.DEBUG,
+        "kafka.consume.started",
+        "topic",
+        "commerce-order-events",
+        "payload",
+        safePayload);
+    boolean handled = false;
+    try {
+      handleLogged(body);
+      handled = true;
+    } catch (Exception failure) {
+      OperationalLog.write(
+          logger,
+          Level.ERROR,
+          "kafka.consume.failed",
+          "topic",
+          "commerce-order-events",
+          "payload",
+          safePayload,
+          "failure",
+          OperationalLog.failure(failure));
+      throw failure;
+    } finally {
+      if (handled)
+        OperationalLog.afterCommit(
+            logger,
+            "kafka.consume.handled",
+            "topic",
+            "commerce-order-events",
+            "payload",
+            safePayload);
+    }
+  }
+
+  private void handleLogged(String body) throws Exception {
     var event = json.readTree(body);
     if (!event.path("status").asText().equals("CONFIRMED")) return;
     if (db.update(

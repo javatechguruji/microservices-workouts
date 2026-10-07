@@ -1,6 +1,8 @@
 package com.tip.ecommerce.payment.service;
 
 import com.tip.ecommerce.payment.event.PaymentCompletedEvent;
+import com.tip.ecommerce.payment.observability.OperationalLog;
+import org.slf4j.event.Level;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.*;
@@ -32,11 +34,31 @@ public class PaymentOutbox {
                     id, ((Number) row.get("payment_id")).longValue(), "SUCCESS"))
             .get(10, java.util.concurrent.TimeUnit.SECONDS);
         db.update("UPDATE payment_outbox SET published=true WHERE order_id=?", id);
-        org.slf4j.LoggerFactory.getLogger(getClass()).info(
-            "Outbox publication recorded: eventId={}", id);
+        OperationalLog.write(
+            org.slf4j.LoggerFactory.getLogger(getClass()),
+            Level.INFO,
+            "kafka.publish.recorded",
+            "topic",
+            "payment-completed",
+            "orderId",
+            id,
+            "paymentId",
+            row.get("payment_id"),
+            "status",
+            "SUCCESS");
       } catch (Exception e) {
-        org.slf4j.LoggerFactory.getLogger(getClass()).warn(
-            "Outbox publication will retry: eventId={} reason={}", id, e.getClass().getSimpleName());
+        OperationalLog.write(
+            org.slf4j.LoggerFactory.getLogger(getClass()),
+            Level.WARN,
+            "kafka.publish.retry",
+            "topic",
+            "payment-completed",
+            "orderId",
+            id,
+            "paymentId",
+            row.get("payment_id"),
+            "failure",
+            OperationalLog.failure(e));
         if (e instanceof InterruptedException) Thread.currentThread().interrupt();
         break;
       }

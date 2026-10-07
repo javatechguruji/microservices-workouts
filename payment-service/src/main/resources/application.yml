@@ -55,6 +55,7 @@ logging:
     format:
       console: logstash
   level:
+    com.tip.ecommerce: ${APP_LOG_LEVEL:INFO}
     org.hibernate.SQL: INFO
     org.hibernate.orm.jdbc.bind: INFO
     org.springframework.jdbc.datasource: INFO

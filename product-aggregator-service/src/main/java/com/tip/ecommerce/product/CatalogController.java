@@ -22,9 +22,7 @@ public class CatalogController {
   private final Path images;
 
   public CatalogController(
-      JdbcTemplate db,
-      GatewayClient gateway,
-      @Value("${catalog.images:}") String images) {
+      JdbcTemplate db, GatewayClient gateway, @Value("${catalog.images:}") String images) {
     this.db = db;
     this.db.setQueryTimeout(3);
     this.gateway = gateway;
@@ -128,6 +126,12 @@ public class CatalogController {
       return Mono.error(
           new ResponseStatusException(
               HttpStatus.BAD_REQUEST, "Unique SKUs and quantities 1–99 required"));
+    com.tip.ecommerce.product.observability.OperationalLog.write(
+        org.slf4j.LoggerFactory.getLogger(getClass()),
+        org.slf4j.event.Level.DEBUG,
+        "quote.requested",
+        "request",
+        com.tip.ecommerce.product.observability.OperationalLog.summary(req));
     return products()
         .flatMap(
             rows ->
@@ -161,7 +165,17 @@ public class CatalogController {
                           }
                           return Map.<String, Object>of(
                               "items", lines, "amount", total, "currency", "USD");
-                        }));
+                        }))
+        .doOnNext(
+            result ->
+                com.tip.ecommerce.product.observability.OperationalLog.write(
+                    org.slf4j.LoggerFactory.getLogger(getClass()),
+                    org.slf4j.event.Level.INFO,
+                    "quote.completed",
+                    "request",
+                    com.tip.ecommerce.product.observability.OperationalLog.summary(req),
+                    "response",
+                    com.tip.ecommerce.product.observability.OperationalLog.summary(result)));
   }
 
   private List<Map<String, Object>> enrich(

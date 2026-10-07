@@ -20,6 +20,8 @@ management:
         enabled: true
 
 logging:
+  level:
+    com.tip.ecommerce: ${APP_LOG_LEVEL:INFO}
   structured:
     format:
       console: logstash

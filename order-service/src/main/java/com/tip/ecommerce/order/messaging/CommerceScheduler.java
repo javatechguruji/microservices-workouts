@@ -1,7 +1,9 @@
 package com.tip.ecommerce.order.messaging;
 
+import com.tip.ecommerce.order.observability.OperationalLog;
 import com.tip.ecommerce.order.service.CheckoutWorker;
 import java.util.*;
+import org.slf4j.event.Level;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
@@ -50,7 +52,7 @@ public class CommerceScheduler {
       worker.step();
     } catch (Exception e) {
       org.slf4j.LoggerFactory.getLogger(getClass())
-          .warn("Checkout step will retry: {}", e.getClass().getSimpleName());
+          .error("event=checkout.worker.failed failure={}", OperationalLog.failure(e));
     }
   }
 
@@ -70,11 +72,31 @@ public class CommerceScheduler {
             .get(12, java.util.concurrent.TimeUnit.SECONDS);
         db.update(
             "UPDATE commerce_outbox SET published=true WHERE event_id=?", row.get("event_id"));
-        org.slf4j.LoggerFactory.getLogger(getClass()).info(
-            "Outbox publication recorded: eventId={}", row.get("event_id"));
+        OperationalLog.write(
+            org.slf4j.LoggerFactory.getLogger(getClass()),
+            Level.INFO,
+            "kafka.publish.recorded",
+            "topic",
+            "commerce-order-events",
+            "orderId",
+            row.get("order_id"),
+            "eventId",
+            row.get("event_id"),
+            "payload",
+            OperationalLog.jsonSummary((String) row.get("payload")));
       } catch (Exception e) {
-        org.slf4j.LoggerFactory.getLogger(getClass()).warn(
-            "Outbox publication will retry: eventId={} reason={}", row.get("event_id"), e.getClass().getSimpleName());
+        OperationalLog.write(
+            org.slf4j.LoggerFactory.getLogger(getClass()),
+            Level.WARN,
+            "kafka.publish.retry",
+            "topic",
+            "commerce-order-events",
+            "orderId",
+            row.get("order_id"),
+            "eventId",
+            row.get("event_id"),
+            "failure",
+            OperationalLog.failure(e));
         if (e instanceof InterruptedException) Thread.currentThread().interrupt();
         break;
       }
