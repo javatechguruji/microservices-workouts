@@ -3,6 +3,15 @@
 Use this section to prepare the environment. Use the [learning index](../README.md)
 for concepts, code excerpts and business verification.
 
+## AWS setup: reading order
+
+1. [01 — Prepare AWS access](01-aws-cli-login.md): select the CLI and sign in as administrator for initial account setup.
+2. [01b — Create your development SSO user](01b-aws-sso-user-setup.md): create the user, set password/MFA, then configure `workouts-dev`.
+3. [02 — AWS VM setup and daily use](02-aws-dev-vm.md): use `workouts-dev` to install once, start/connect/stop daily, and terminate/recreate when needed.
+
+For normal work, keep **02** open.
+The component-specific guides below are references, not additional AWS installation steps.
+
 ## Deployment model
 
 The root [docker-compose.yml](../../docker-compose.yml) owns **shared-infra**:

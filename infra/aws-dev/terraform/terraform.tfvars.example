@@ -1,0 +1,17 @@
+# AWS region close to you; use the same region for any optional AMI/account checks.
+aws_region = "us-east-1"
+
+# Resource names and tags; change this before the first deployment.
+name = "workouts-dev"
+
+# Replace with YOUR public IPv4 /32 (find it with: curl -4 https://checkip.amazonaws.com).
+ssh_cidr = "203.0.113.10/32"
+
+# Recommended 8 GiB RAM; change to "t2.medium" for 4 GiB if you accept memory pressure.
+instance_type = "t3.large"
+
+# Encrypted persistent disk size in GiB for Docker images and all service data.
+disk_gib = 60
+
+# "standard" may throttle; "unlimited" can charge extra for sustained CPU usage.
+cpu_credits = "standard"

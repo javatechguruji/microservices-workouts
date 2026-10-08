@@ -34,3 +34,20 @@ replay_pid*
 # Python setup/test helper bytecode
 __pycache__/
 *.pyc
+
+# EC2 development configuration contains generated administrator credentials.
+infra/aws-dev/admin.env
+infra/aws-dev/compose.generated.json
+
+# Local Terraform state, provider cache, plans, SSH key and user configuration.
+infra/aws-dev/.ssh/
+infra/aws-dev/ssh.generated.conf
+infra/aws-dev/terraform/.terraform/
+infra/aws-dev/terraform/*.tfstate*
+infra/aws-dev/terraform/*.tfvars
+infra/aws-dev/terraform/*.tfplan
+infra/aws-dev/terraform/crash.log
+
+# Local cleanup resource IDs used for safe termination retries.
+infra/aws-dev/cleanup-record.json
+infra/aws-dev/cleanup-record.tmp
